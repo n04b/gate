@@ -31,6 +31,27 @@ restart to add your services.
 Bootstrap is driven by `GATE_BOOTSTRAP`, which the image sets to `true`. Set it
 to `false` to require a config and keys that you provision yourself.
 
+Mounted directories keep their host ownership — and Docker creates a missing
+bind-mount source as `root:root` — so ownership, not the image, decides what the
+container may write. Gate handles that in two places:
+
+* `/data` is fixed by the entrypoint, which starts as root, chowns it to
+  `PUID:PGID` (`1000:1000` by default, taken from `UID`/`GID` in `.env`) and
+  then execs Gate as that user. The server itself never runs as root; set
+  `user:` in compose to skip the step and stay unprivileged throughout.
+* `/app/config` is never chowned — it is your directory. If Gate cannot write
+  there it does not crash-loop: it writes the default to `/data/gate.yaml`
+  instead, says so in the log, and keeps using it.
+
+To move a fallback config back to the host, make the directory writable for that
+uid (`chown -R 1000:1000 config`) and copy the file over:
+
+```bash
+docker cp gate:/data/gate.yaml ./config/gate.yaml
+```
+
+A config at the mounted path always wins over the fallback once it exists.
+
 `docker-compose.yml` expects `TUNNEL_TOKEN` in `.env` (see `.env.example`), and
 points the tunnel's public hostname at `http://gate:8080`. Gate publishes no
 host port — it is reachable only over the internal Docker networks.
@@ -154,9 +175,10 @@ its metadata — never the token — is appended as one JSON line to
 * The private key is never baked into the image. It is either generated at
   runtime into the `gate-data` volume or bind-mounted from the host — back up
   the volume, or the issued tokens stop verifying.
-* Gate runs as the non-root `node` user and keeps no database; the only
-  persistent state it writes is the token log and, on first start, the config
-  and key pair.
+* Gate runs as `PUID:PGID` (non-root, `1000:1000` by default) and keeps no
+  database; the only persistent state it writes is the token log and, on first
+  start, the config and key pair. `docker exec gate gate …` runs the CLI as the
+  owner of `/data`, so the token log keeps a single owner.
 
 ## Development
 

@@ -2,6 +2,7 @@
 import { hostname, userInfo } from 'node:os';
 import { pathToFileURL } from 'node:url';
 import { parseArgs } from 'node:util';
+import { resolveConfigPath } from './bootstrap.js';
 import { ConfigError, loadConfigFile } from './config/load.js';
 import { parseDuration, UnitParseError } from './config/units.js';
 import { createTokenIssuer } from './jwt/issuer.js';
@@ -105,7 +106,10 @@ async function tokenCreate(argv: readonly string[]): Promise<number> {
     }
   }
 
-  const configPath = values.config ?? process.env['GATE_CONFIG'] ?? DEFAULT_CONFIG_PATH;
+  // An explicit --config is used verbatim; otherwise follow the same fallback
+  // the server uses when the mounted config directory is not writable.
+  const configPath =
+    values.config ?? resolveConfigPath(process.env['GATE_CONFIG'] ?? DEFAULT_CONFIG_PATH);
 
   let config;
   try {

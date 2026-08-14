@@ -1,18 +1,35 @@
-import { bootstrap, bootstrapEnabled, BootstrapError } from './bootstrap.js';
+import {
+  bootstrap,
+  bootstrapEnabled,
+  BootstrapError,
+  resolveConfigPath,
+} from './bootstrap.js';
 import { ConfigError, loadConfigFile } from './config/load.js';
 import { buildServer } from './server.js';
 
 const DEFAULT_CONFIG_PATH = '/app/config/gate.yaml';
 
 async function main(): Promise<void> {
-  const configPath = process.env['GATE_CONFIG'] ?? DEFAULT_CONFIG_PATH;
+  const requestedConfigPath = process.env['GATE_CONFIG'] ?? DEFAULT_CONFIG_PATH;
+  let configPath = resolveConfigPath(requestedConfigPath);
 
   if (bootstrapEnabled(process.env['GATE_BOOTSTRAP'])) {
     try {
-      const result = bootstrap(configPath);
+      const result = bootstrap(requestedConfigPath);
+      configPath = result.configPath;
+
       if (result.configCreated) {
         process.stderr.write(
           `gate: no config found, wrote a default one to ${result.configPath}\n`,
+        );
+      }
+      if (result.configFallbackUsed) {
+        const uid = process.getuid?.() ?? 'unknown';
+        process.stderr.write(
+          `gate: ${requestedConfigPath} is not writable by uid ${uid}, so ${result.configPath} ` +
+            'is used instead. To keep the config on the host, make the mounted directory ' +
+            `writable for uid ${uid} and copy the file there ` +
+            `(docker cp gate:${result.configPath} ./config/gate.yaml).\n`,
         );
       }
       if (result.keysCreated) {

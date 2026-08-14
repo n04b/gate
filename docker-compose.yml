@@ -11,13 +11,19 @@ services:
     environment:
       GATE_CONFIG: /app/config/gate.yaml
       GATE_ISSUED_BY: ${GATE_ISSUED_BY:-}
+      # Gate runs as this user. The entrypoint chowns /data to it first, so a
+      # bind-mounted data directory created by Docker as root:root still works.
+      PUID: ${UID:-1000}
+      PGID: ${GID:-1000}
       # On first start, write config/gate.yaml if it is missing and generate the
       # JWT key pair into the gate-data volume. Nothing existing is overwritten.
       GATE_BOOTSTRAP: "true"
 
     volumes:
       # Writable so the first start can drop a default gate.yaml here for you to
-      # edit. Add :ro once you manage the file yourself.
+      # edit. Add :ro once you manage the file yourself. If the directory is not
+      # writable for uid 1000, Gate falls back to /data/gate.yaml in the volume
+      # rather than failing to start.
       - ./config:/app/config
       # Holds the token log and, unless you point jwt.* elsewhere, the keys.
       - gate-data:/data

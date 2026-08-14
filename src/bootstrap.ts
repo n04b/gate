@@ -14,9 +14,36 @@ export class BootstrapError extends Error {
 export interface BootstrapResult {
   readonly configCreated: boolean;
   readonly keysCreated: boolean;
+  /** Path Gate should actually load, which may be the fallback. */
   readonly configPath: string;
+  /** True when the configured path was not writable and the fallback was used. */
+  readonly configFallbackUsed: boolean;
   readonly publicKeyPath: string | undefined;
   readonly privateKeyPath: string | undefined;
+}
+
+/**
+ * Where the default config goes when the configured location cannot be written.
+ * A bind-mounted ./config belongs to the host user, so a container running as
+ * `node` often cannot create files in it; the data volume always works.
+ */
+export const FALLBACK_CONFIG_PATH = '/data/gate.yaml';
+
+export interface BootstrapOptions {
+  readonly fallbackConfigPath?: string;
+}
+
+/**
+ * Returns the config file Gate should load: the configured one when it exists,
+ * otherwise a previously generated fallback. Nothing is written.
+ */
+export function resolveConfigPath(
+  configPath: string,
+  fallbackConfigPath: string = FALLBACK_CONFIG_PATH,
+): string {
+  if (existsSync(configPath)) return configPath;
+  if (existsSync(fallbackConfigPath)) return fallbackConfigPath;
+  return configPath;
 }
 
 /**
@@ -27,22 +54,28 @@ export interface BootstrapResult {
  * never overwritten, so restarts and upgrades leave a deployment untouched.
  * Key material is only ever created at runtime, never baked into the image.
  */
-export function bootstrap(configPath: string): BootstrapResult {
-  const configCreated = ensureConfig(configPath);
+export function bootstrap(configPath: string, options: BootstrapOptions = {}): BootstrapResult {
+  const fallbackConfigPath = options.fallbackConfigPath ?? FALLBACK_CONFIG_PATH;
+  const {
+    path: effectivePath,
+    created: configCreated,
+    fallbackUsed: configFallbackUsed,
+  } = placeConfig(configPath, fallbackConfigPath);
 
   let config;
   try {
-    config = parseConfig(readFileSync(configPath, 'utf8'), {
+    config = parseConfig(readFileSync(effectivePath, 'utf8'), {
       checkKeyFiles: false,
-      baseDir: dirname(configPath),
+      baseDir: dirname(effectivePath),
     });
   } catch (error) {
     if (error instanceof ConfigError) {
       // The config is the operator's to fix; startup reports it in full.
       return {
         configCreated,
+        configFallbackUsed,
         keysCreated: false,
-        configPath,
+        configPath: effectivePath,
         publicKeyPath: undefined,
         privateKeyPath: undefined,
       };
@@ -53,8 +86,49 @@ export function bootstrap(configPath: string): BootstrapResult {
   const { publicKeyPath, privateKeyPath } = config.jwt;
   const keysCreated = ensureKeyPair(publicKeyPath, privateKeyPath);
 
-  return { configCreated, keysCreated, configPath, publicKeyPath, privateKeyPath };
+  return {
+    configCreated,
+    configFallbackUsed,
+    keysCreated,
+    configPath: effectivePath,
+    publicKeyPath,
+    privateKeyPath,
+  };
 }
+
+export interface ConfigPlacement {
+  readonly path: string;
+  readonly created: boolean;
+  readonly fallbackUsed: boolean;
+}
+
+/**
+ * Creates the default config at the configured path, or — when that directory
+ * belongs to another user, as a bind-mounted ./config usually does — at the
+ * fallback path inside the data volume. Gate must not crash-loop over this.
+ */
+export function placeConfig(configPath: string, fallbackPath: string): ConfigPlacement {
+  if (existsSync(configPath)) {
+    return { path: configPath, created: false, fallbackUsed: false };
+  }
+  if (existsSync(fallbackPath)) {
+    return { path: fallbackPath, created: false, fallbackUsed: true };
+  }
+
+  try {
+    ensureConfig(configPath);
+    return { path: configPath, created: true, fallbackUsed: false };
+  } catch (error) {
+    if (!(error instanceof PermissionError) || configPath === fallbackPath) throw error;
+  }
+
+  ensureConfig(fallbackPath);
+  return { path: fallbackPath, created: true, fallbackUsed: true };
+}
+
+class PermissionError extends BootstrapError {}
+
+const PERMISSION_CODES = new Set(['EACCES', 'EPERM', 'EROFS']);
 
 /** Writes the default config when the path is free. Exported for tests. */
 export function ensureConfig(configPath: string): boolean {
@@ -66,11 +140,15 @@ export function ensureConfig(configPath: string): boolean {
     // whoever wrote first owns the file.
     writeFileSync(configPath, DEFAULT_CONFIG_YAML, { encoding: 'utf8', flag: 'wx' });
   } catch (error) {
-    if ((error as NodeJS.ErrnoException).code === 'EEXIST') return false;
-    throw new BootstrapError(
+    const code = (error as NodeJS.ErrnoException).code;
+    if (code === 'EEXIST') return false;
+
+    const message =
       `cannot create the default config at ${configPath}: ${(error as Error).message}. ` +
-        'Mount the directory writable, or provide a config file yourself.',
-    );
+      'Mount the directory writable, or provide a config file yourself.';
+    throw code !== undefined && PERMISSION_CODES.has(code)
+      ? new PermissionError(message)
+      : new BootstrapError(message);
   }
 
   return true;

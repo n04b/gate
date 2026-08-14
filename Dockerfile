@@ -18,13 +18,24 @@ ENV NODE_ENV=production \
     GATE_CONFIG=/app/config/gate.yaml \
     GATE_BOOTSTRAP=true
 
+# su-exec drops privileges in the entrypoint after mounted state is made
+# writable; nothing else in the image needs root.
+RUN apk add --no-cache su-exec
+
 COPY --from=build /app/node_modules ./node_modules
 COPY --from=build /app/dist ./dist
 COPY package.json ./
+COPY scripts/docker-entrypoint.sh /usr/local/bin/docker-entrypoint.sh
 
-# `docker exec gate gate token create ...`
-RUN printf '#!/bin/sh\nexec node /app/dist/cli.js "$@"\n' > /usr/local/bin/gate \
-    && chmod +x /usr/local/bin/gate \
+# `docker exec gate gate token create ...` — run as whoever owns /data so the
+# append-only token log never ends up with mixed ownership.
+RUN printf '%s\n' \
+      '#!/bin/sh' \
+      'if [ "$(id -u)" = "0" ] && [ -d /data ]; then' \
+      '  exec su-exec "$(stat -c %u:%g /data)" node /app/dist/cli.js "$@"' \
+      'fi' \
+      'exec node /app/dist/cli.js "$@"' > /usr/local/bin/gate \
+    && chmod +x /usr/local/bin/gate /usr/local/bin/docker-entrypoint.sh \
     && mkdir -p /data /app/config \
     && chown -R node:node /data /app/config
 
@@ -33,7 +44,12 @@ VOLUME ["/data"]
 
 # No key material is baked into the image. GATE_BOOTSTRAP makes the container
 # write a default config and generate the key pair on first start, at runtime.
-USER node
+#
+# The entrypoint starts as root only to fix ownership of bind-mounted state and
+# then execs Gate as PUID:PGID (1000:1000 by default) — the server itself never
+# runs as root. Set `user:` in compose to skip that and run unprivileged from
+# the very first instruction.
+ENTRYPOINT ["/usr/local/bin/docker-entrypoint.sh"]
 
 EXPOSE 8080
 

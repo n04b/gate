@@ -7,6 +7,8 @@ import {
   BootstrapError,
   ensureConfig,
   ensureKeyPair,
+  placeConfig,
+  resolveConfigPath,
 } from '../src/bootstrap.js';
 import { DEFAULT_CONFIG_YAML } from '../src/config/template.js';
 import { loadConfigFile, parseConfig } from '../src/config/load.js';
@@ -76,6 +78,101 @@ describe('generated config', () => {
     } finally {
       chmodSync(readOnly, 0o700);
     }
+  });
+});
+
+describe('unwritable config mount', () => {
+  /** A bind-mounted ./config owned by another user is the common case. */
+  function readOnlyMount(): { primary: string; fallback: string; dir: string } {
+    const dir = tempDir('gate-bootstrap-');
+    const mount = join(dir, 'config');
+    mkdirSync(mount);
+    chmodSync(mount, 0o500);
+    return { primary: join(mount, 'gate.yaml'), fallback: join(dir, 'data', 'gate.yaml'), dir };
+  }
+
+  it('falls back to the data volume instead of failing the start', () => {
+    const { primary, fallback, dir } = readOnlyMount();
+
+    try {
+      const placement = placeConfig(primary, fallback);
+
+      expect(placement.fallbackUsed).toBe(true);
+      expect(placement.created).toBe(true);
+      expect(placement.path).toBe(fallback);
+      expect(existsSync(fallback)).toBe(true);
+      expect(existsSync(primary)).toBe(false);
+    } finally {
+      chmodSync(join(dir, 'config'), 0o700);
+    }
+  });
+
+  it('generates keys and reports the fallback path through the full bootstrap', () => {
+    const { primary, fallback, dir } = readOnlyMount();
+    mkdirSync(join(dir, 'data'), { recursive: true });
+    writeFileSync(fallback, DEFAULT_CONFIG_YAML.replaceAll('/data/', `${dir}/data/`));
+
+    try {
+      const result = bootstrap(primary, { fallbackConfigPath: fallback });
+
+      expect(result.configPath).toBe(fallback);
+      expect(result.configFallbackUsed).toBe(true);
+      expect(result.configCreated).toBe(false);
+      expect(result.keysCreated).toBe(true);
+      expect(existsSync(join(dir, 'data/keys/jwt_private.pem'))).toBe(true);
+
+      loadConfigFile(fallback, { checkKeyFiles: true });
+    } finally {
+      chmodSync(join(dir, 'config'), 0o700);
+    }
+  });
+
+  it('keeps using the fallback on later starts without rewriting it', () => {
+    const { primary, fallback, dir } = readOnlyMount();
+
+    try {
+      placeConfig(primary, fallback);
+      writeFileSync(fallback, `${readFileSync(fallback, 'utf8')}\n# edited\n`);
+
+      const second = placeConfig(primary, fallback);
+      expect(second.created).toBe(false);
+      expect(second.fallbackUsed).toBe(true);
+      expect(second.path).toBe(fallback);
+      expect(readFileSync(fallback, 'utf8')).toContain('# edited');
+    } finally {
+      chmodSync(join(dir, 'config'), 0o700);
+    }
+  });
+
+  it('prefers the mounted config once it exists', () => {
+    const dir = tempDir('gate-bootstrap-');
+    const primary = join(dir, 'config', 'gate.yaml');
+    const fallback = join(dir, 'data', 'gate.yaml');
+    mkdirSync(join(dir, 'config'), { recursive: true });
+    mkdirSync(join(dir, 'data'), { recursive: true });
+    writeFileSync(fallback, DEFAULT_CONFIG_YAML);
+    writeFileSync(primary, DEFAULT_CONFIG_YAML);
+
+    expect(resolveConfigPath(primary, fallback)).toBe(primary);
+    expect(placeConfig(primary, fallback)).toEqual({
+      path: primary,
+      created: false,
+      fallbackUsed: false,
+    });
+  });
+
+  it('resolves the readable config without writing anything', () => {
+    const dir = tempDir('gate-bootstrap-');
+    const primary = join(dir, 'config', 'gate.yaml');
+    const fallback = join(dir, 'data', 'gate.yaml');
+
+    expect(resolveConfigPath(primary, fallback)).toBe(primary);
+    expect(existsSync(primary)).toBe(false);
+    expect(existsSync(fallback)).toBe(false);
+
+    mkdirSync(join(dir, 'data'), { recursive: true });
+    writeFileSync(fallback, DEFAULT_CONFIG_YAML);
+    expect(resolveConfigPath(primary, fallback)).toBe(fallback);
   });
 });
 
