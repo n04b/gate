@@ -15,7 +15,8 @@ FROM node:22-alpine AS runtime
 WORKDIR /app
 
 ENV NODE_ENV=production \
-    GATE_CONFIG=/app/config/gate.yaml
+    GATE_CONFIG=/app/config/gate.yaml \
+    GATE_BOOTSTRAP=true
 
 COPY --from=build /app/node_modules ./node_modules
 COPY --from=build /app/dist ./dist
@@ -24,13 +25,14 @@ COPY package.json ./
 # `docker exec gate gate token create ...`
 RUN printf '#!/bin/sh\nexec node /app/dist/cli.js "$@"\n' > /usr/local/bin/gate \
     && chmod +x /usr/local/bin/gate \
-    && mkdir -p /data /app/config /app/keys \
-    && chown -R node:node /data
+    && mkdir -p /data /app/config \
+    && chown -R node:node /data /app/config
 
-# The append-only token log lives in a volume, not in the image layer.
+# The token log and the generated JWT keys live in a volume, not in the image.
 VOLUME ["/data"]
 
-# No key material is baked into the image: ./keys is bind-mounted at runtime.
+# No key material is baked into the image. GATE_BOOTSTRAP makes the container
+# write a default config and generate the key pair on first start, at runtime.
 USER node
 
 EXPOSE 8080

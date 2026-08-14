@@ -1,6 +1,8 @@
-# Gate configuration.
+# Fully worked example of a Gate configuration.
 #
-# Mounted read-only into the container at /app/config/gate.yaml.
+# This file is a reference, not the file Gate reads. On first start the
+# container writes a minimal config/gate.yaml (mounted at
+# /app/config/gate.yaml) if none exists; copy from here to grow it.
 
 server:
   host: 0.0.0.0
@@ -14,8 +16,10 @@ logging:
 jwt:
   algorithm: RS256
 
-  public_key: /app/keys/jwt_public.pem
-  private_key: /app/keys/jwt_private.pem
+  # Generated on first start if missing. Point these at /app/keys/… instead to
+  # manage the pair on the host and mount ./keys read-only.
+  public_key: /data/keys/jwt_public.pem
+  private_key: /data/keys/jwt_private.pem
 
   issuer: homelab-gateway
 

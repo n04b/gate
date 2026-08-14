@@ -11,5 +11,7 @@ coverage/
 keys/
 *.pem
 
-# Local, machine-specific configuration.
+# Live configuration: generated on first container start, edited per host.
+# config/gate.example.yaml is the reference kept in the repository.
+config/gate.yaml
 config/gate.dev.yaml

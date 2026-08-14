@@ -16,14 +16,33 @@ Internet → Cloudflare → cloudflared → Gate → n8n | Grafana | Node-RED | 
 ## Quick start
 
 ```bash
-npm install
-sh scripts/generate-keys.sh ./keys
+cp .env.example .env      # fill in TUNNEL_TOKEN
 docker compose up -d --build
 ```
+
+The first start bootstraps itself: if `config/gate.yaml` is missing Gate writes
+a minimal one there (the mount is writable for exactly this reason), and if the
+JWT keys named in it do not exist it generates an RS256 pair into the
+`gate-data` volume. Nothing existing is ever overwritten, so restarts and
+upgrades leave a live deployment alone. Edit `config/gate.yaml` — see
+[config/gate.example.yaml](config/gate.example.yaml) for a worked example — and
+restart to add your services.
+
+Bootstrap is driven by `GATE_BOOTSTRAP`, which the image sets to `true`. Set it
+to `false` to require a config and keys that you provision yourself.
 
 `docker-compose.yml` expects `TUNNEL_TOKEN` in `.env` (see `.env.example`), and
 points the tunnel's public hostname at `http://gate:8080`. Gate publishes no
 host port — it is reachable only over the internal Docker networks.
+
+To manage the key pair on the host instead, create it before the first start and
+point the config at the mount:
+
+```bash
+sh scripts/generate-keys.sh ./keys   # then uncomment the ./keys mount in
+                                     # docker-compose.yml and set jwt.public_key
+                                     # / jwt.private_key to /app/keys/…
+```
 
 Issue a token:
 
@@ -33,9 +52,8 @@ docker exec gate gate token create --subject github --target n8n --expires 1h
 
 ## Configuration
 
-`config/gate.yaml` is mounted read-only at `/app/config/gate.yaml`. Every field
-below is optional except `jwt.public_key`, `jwt.private_key`, `services` and
-`routes`.
+`config/gate.yaml` is mounted at `/app/config/gate.yaml`. Every field below is
+optional except `jwt.public_key`, `jwt.private_key`, `services` and `routes`.
 
 ```yaml
 server:
@@ -49,11 +67,11 @@ logging:
   level: info
 
 jwt:
-  algorithm: RS256                     # default; symmetric algorithms are rejected
-  public_key: /app/keys/jwt_public.pem
-  private_key: /app/keys/jwt_private.pem
-  issuer: homelab-gateway              # default
-  audience: [homelab]                  # default
+  algorithm: RS256                      # default; symmetric algorithms are rejected
+  public_key: /data/keys/jwt_public.pem  # generated on first start if missing
+  private_key: /data/keys/jwt_private.pem
+  issuer: homelab-gateway               # default
+  audience: [homelab]                   # default
   clock_tolerance: 5s
 
 mapping:
@@ -133,10 +151,12 @@ its metadata — never the token — is appended as one JSON line to
 * One structured log line per request: `request_id`, `target`, `service`,
   `method`, `path`, `status`, `duration_ms`. JWTs, `Authorization`, credentials
   and request bodies are never logged.
-* The private key is never baked into the image — it arrives through the
-  read-only `./keys` bind mount.
+* The private key is never baked into the image. It is either generated at
+  runtime into the `gate-data` volume or bind-mounted from the host — back up
+  the volume, or the issued tokens stop verifying.
 * Gate runs as the non-root `node` user and keeps no database; the only
-  persistent state it writes is the token log.
+  persistent state it writes is the token log and, on first start, the config
+  and key pair.
 
 ## Development
 
@@ -146,15 +166,16 @@ npm run typecheck
 npm run build
 ```
 
-`GATE_CONFIG` overrides the config path (default `/app/config/gate.yaml`) and
+Environment variables: `GATE_CONFIG` overrides the config path (default
+`/app/config/gate.yaml`), `GATE_BOOTSTRAP` enables first-start generation (off
+outside Docker, so a local run never writes files behind your back), and
 `GATE_ISSUED_BY` provides the default `issued_by` for the CLI. Relative paths
 inside a config file resolve against that file's own directory.
 
-`config/gate.yaml` uses container paths, so running outside Docker needs its own
-copy — point `jwt.public_key` / `jwt.private_key` at `../keys/…` and
-`token_log.path` somewhere writable:
+Running outside Docker needs a config with local paths — point `jwt.public_key`
+/ `jwt.private_key` at `../keys/…` and `token_log.path` somewhere writable:
 
 ```bash
-cp config/gate.yaml config/gate.dev.yaml   # edit the paths, then:
+cp config/gate.example.yaml config/gate.dev.yaml   # edit the paths, then:
 GATE_CONFIG=config/gate.dev.yaml npm run dev
 ```

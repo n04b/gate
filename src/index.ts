@@ -1,3 +1,4 @@
+import { bootstrap, bootstrapEnabled, BootstrapError } from './bootstrap.js';
 import { ConfigError, loadConfigFile } from './config/load.js';
 import { buildServer } from './server.js';
 
@@ -5,6 +6,26 @@ const DEFAULT_CONFIG_PATH = '/app/config/gate.yaml';
 
 async function main(): Promise<void> {
   const configPath = process.env['GATE_CONFIG'] ?? DEFAULT_CONFIG_PATH;
+
+  if (bootstrapEnabled(process.env['GATE_BOOTSTRAP'])) {
+    try {
+      const result = bootstrap(configPath);
+      if (result.configCreated) {
+        process.stderr.write(
+          `gate: no config found, wrote a default one to ${result.configPath}\n`,
+        );
+      }
+      if (result.keysCreated) {
+        process.stderr.write(`gate: generated a JWT key pair at ${result.privateKeyPath}\n`);
+      }
+    } catch (error) {
+      if (error instanceof BootstrapError) {
+        process.stderr.write(`gate: ${error.message}\n`);
+        process.exit(1);
+      }
+      throw error;
+    }
+  }
 
   let config;
   try {

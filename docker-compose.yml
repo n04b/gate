@@ -10,12 +10,20 @@ services:
 
     environment:
       GATE_CONFIG: /app/config/gate.yaml
-      GATE_ISSUED_BY: ${GATE_ISSUED_BY:-compose}
+      GATE_ISSUED_BY: ${GATE_ISSUED_BY:-}
+      # On first start, write config/gate.yaml if it is missing and generate the
+      # JWT key pair into the gate-data volume. Nothing existing is overwritten.
+      GATE_BOOTSTRAP: "true"
 
     volumes:
-      - ./config:/app/config:ro
-      - ./keys:/app/keys:ro
+      # Writable so the first start can drop a default gate.yaml here for you to
+      # edit. Add :ro once you manage the file yourself.
+      - ./config:/app/config
+      # Holds the token log and, unless you point jwt.* elsewhere, the keys.
       - gate-data:/data
+      # Prefer host-managed keys? Mount them and set jwt.public_key /
+      # jwt.private_key to /app/keys/… — bootstrap then leaves them alone.
+      # - ./keys:/app/keys:ro
 
     networks:
       - gateway
