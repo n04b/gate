@@ -1,0 +1,15 @@
+.DS_Store
+.vscode/
+
+.env
+
+node_modules/
+dist/
+coverage/
+
+# JWT key material never belongs in the repository.
+keys/
+*.pem
+
+# Local, machine-specific configuration.
+config/gate.dev.yaml

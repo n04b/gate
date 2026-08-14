@@ -1,0 +1,35 @@
+{
+  "name": "gate",
+  "version": "0.1.0",
+  "private": true,
+  "description": "Self-hosted HTTP gateway for a homelab environment",
+  "type": "module",
+  "engines": {
+    "node": ">=22"
+  },
+  "bin": {
+    "gate": "./dist/cli.js"
+  },
+  "scripts": {
+    "build": "tsc -p tsconfig.build.json",
+    "start": "node dist/index.js",
+    "dev": "tsx watch src/index.ts",
+    "cli": "tsx src/cli.ts",
+    "keys:generate": "sh scripts/generate-keys.sh",
+    "typecheck": "tsc --noEmit",
+    "test": "vitest run"
+  },
+  "dependencies": {
+    "fastify": "^5.2.1",
+    "jose": "^5.9.6",
+    "undici": "^7.3.0",
+    "yaml": "^2.7.0",
+    "zod": "^3.24.1"
+  },
+  "devDependencies": {
+    "@types/node": "^22.10.7",
+    "tsx": "^4.19.2",
+    "typescript": "^5.7.3",
+    "vitest": "^3.0.4"
+  }
+}

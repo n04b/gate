@@ -1,0 +1,64 @@
+services:
+  gate:
+    build: .
+    image: homelab-gate:latest
+    container_name: gate
+    restart: unless-stopped
+
+    # Gate never publishes a port on the host. It is reachable only through the
+    # internal Docker networks — cloudflared connects to http://gate:8080.
+
+    environment:
+      GATE_CONFIG: /app/config/gate.yaml
+      GATE_ISSUED_BY: ${GATE_ISSUED_BY:-compose}
+
+    volumes:
+      - ./config:/app/config:ro
+      - ./keys:/app/keys:ro
+      - gate-data:/data
+
+    networks:
+      - gateway
+      - services
+
+  cloudflared:
+    image: cloudflare/cloudflared:latest
+    container_name: cloudflared
+    restart: unless-stopped
+    command: tunnel --no-autoupdate run
+    environment:
+      TUNNEL_TOKEN: ${TUNNEL_TOKEN:?TUNNEL_TOKEN is required}
+    depends_on:
+      - gate
+    networks:
+      - gateway
+
+  # Catch-all upstream for requests Gate cannot route.
+  fallback:
+    image: traefik/whoami
+    container_name: gate-fallback
+    restart: unless-stopped
+    command: ["--port", "8080"]
+    networks:
+      - services
+
+  # Upstreams referenced by config/gate.yaml live on the `services` network:
+  #
+  # n8n:
+  #   image: docker.n8n.io/n8nio/n8n
+  #   networks: [services]
+  #
+  # grafana:
+  #   image: grafana/grafana
+  #   networks: [services]
+  #
+  # node-red:
+  #   image: nodered/node-red
+  #   networks: [services]
+
+volumes:
+  gate-data:
+
+networks:
+  gateway:
+  services:

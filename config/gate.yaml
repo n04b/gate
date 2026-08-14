@@ -1,0 +1,57 @@
+# Gate configuration.
+#
+# Mounted read-only into the container at /app/config/gate.yaml.
+
+server:
+  host: 0.0.0.0
+  port: 8080
+  max_body_size: 1MB
+  upstream_timeout: 30s
+
+logging:
+  level: info
+
+jwt:
+  algorithm: RS256
+
+  public_key: /app/keys/jwt_public.pem
+  private_key: /app/keys/jwt_private.pem
+
+  issuer: homelab-gateway
+
+  audience:
+    - homelab
+
+mapping:
+  enabled: true
+
+token_log:
+  path: /data/tokens.jsonl
+
+services:
+  grafana-main:
+    url: http://grafana:3000
+
+  n8n:
+    url: http://n8n:5678
+
+  node-red:
+    url: http://node-red:1880
+
+  fallback:
+    url: http://fallback:8080
+
+routes:
+  - target: grafana
+    service: grafana-main
+
+  - target: n8n
+    mapping:
+      path:
+        strip_prefix: /n8n/
+
+  - target: node-red
+    auth: false
+
+  - fallback:
+      service: fallback
