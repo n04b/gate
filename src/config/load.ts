@@ -269,7 +269,8 @@ function buildConfig(raw: z.infer<typeof rawConfigSchema>, options: LoadOptions)
     logging: { level: raw.logging?.level ?? DEFAULTS.logLevel },
     tokenLog: {
       path: resolveConfigPath(raw.token_log?.path ?? DEFAULTS.tokenLogPath, baseDir),
-      defaultIssuedBy: raw.token_log?.issued_by ?? options.defaultIssuedBy,
+      // An empty GATE_ISSUED_BY is treated as unset, not as an empty issuer.
+      defaultIssuedBy: raw.token_log?.issued_by ?? blankToUndefined(options.defaultIssuedBy),
     },
     services,
     routes: normalRoutes,
@@ -340,6 +341,11 @@ function parseServiceUrl(value: string): { origin: string; basePath: string } | 
   }
   const basePath = url.pathname === '/' ? '' : url.pathname.replace(/\/$/, '');
   return { origin: url.origin, basePath };
+}
+
+function blankToUndefined(value: string | undefined): string | undefined {
+  const trimmed = value?.trim();
+  return trimmed === undefined || trimmed === '' ? undefined : trimmed;
 }
 
 function resolveConfigPath(value: string, baseDir: string): string {

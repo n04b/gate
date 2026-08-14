@@ -139,8 +139,12 @@ async function tokenCreate(argv: readonly string[]): Promise<number> {
     throw error;
   }
 
+  // A blank --issued-by or GATE_ISSUED_BY counts as absent: the token log must
+  // never record an empty issuer.
   const issuedBy =
-    values['issued-by'] ?? config.tokenLog.defaultIssuedBy ?? `${userInfo().username}@${hostname()}`;
+    nonEmpty(values['issued-by']) ??
+    config.tokenLog.defaultIssuedBy ??
+    `${userInfo().username}@${hostname()}`;
 
   try {
     appendTokenLog(config.tokenLog.path, {
@@ -162,6 +166,11 @@ async function tokenCreate(argv: readonly string[]): Promise<number> {
   );
   process.stdout.write(`${issued.token}\n`);
   return 0;
+}
+
+function nonEmpty(value: string | undefined): string | undefined {
+  const trimmed = value?.trim();
+  return trimmed === undefined || trimmed === '' ? undefined : trimmed;
 }
 
 function fail(message: string): number {

@@ -180,6 +180,32 @@ describe('token create', () => {
     expect(readFileSync(tokenLogPath, 'utf8').startsWith(rawBefore)).toBe(true);
   });
 
+  it('falls back to user@host when issued_by is blank or unset', async () => {
+    const previous = process.env['GATE_ISSUED_BY'];
+
+    try {
+      delete process.env['GATE_ISSUED_BY'];
+      expect(await cli('--subject', 'a', '--target', 'n8n', '--expires', '5m')).toBe(0);
+      expect(logLines().at(-1)!['issued_by']).toMatch(/^.+@.+$/);
+
+      process.env['GATE_ISSUED_BY'] = '';
+      expect(await cli('--subject', 'a', '--target', 'n8n', '--expires', '5m')).toBe(0);
+      expect(logLines().at(-1)!['issued_by']).toMatch(/^.+@.+$/);
+
+      expect(
+        await cli('--subject', 'a', '--target', 'n8n', '--expires', '5m', '--issued-by', '   '),
+      ).toBe(0);
+      expect(logLines().at(-1)!['issued_by']).toMatch(/^.+@.+$/);
+
+      process.env['GATE_ISSUED_BY'] = 'homelab';
+      expect(await cli('--subject', 'a', '--target', 'n8n', '--expires', '5m')).toBe(0);
+      expect(logLines().at(-1)!['issued_by']).toBe('homelab');
+    } finally {
+      if (previous === undefined) delete process.env['GATE_ISSUED_BY'];
+      else process.env['GATE_ISSUED_BY'] = previous;
+    }
+  });
+
   it('warns when the target has no configured route', async () => {
     expect(await cli('--subject', 'a', '--target', 'not-configured', '--expires', '5m')).toBe(0);
     expect(stderr.join('')).toContain('no route is configured for target "not-configured"');
