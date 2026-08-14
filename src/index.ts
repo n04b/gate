@@ -25,11 +25,13 @@ async function main(): Promise<void> {
       }
       if (result.configFallbackUsed) {
         const uid = process.getuid?.() ?? 'unknown';
+        const reason = result.configCreated
+          ? `${requestedConfigPath} is not writable by uid ${uid}`
+          : `${requestedConfigPath} does not exist`;
         process.stderr.write(
-          `gate: ${requestedConfigPath} is not writable by uid ${uid}, so ${result.configPath} ` +
-            'is used instead. To keep the config on the host, make the mounted directory ' +
-            `writable for uid ${uid} and copy the file there ` +
-            `(docker cp gate:${result.configPath} ./config/gate.yaml).\n`,
+          `gate: ${reason}, so ${result.configPath} is used instead. To manage the config ` +
+            `where it is mounted, move it to ${requestedConfigPath} and restart; a config ` +
+            'there always takes precedence.\n',
         );
       }
       if (result.keysCreated) {

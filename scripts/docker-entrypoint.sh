@@ -15,11 +15,15 @@ APP_UID="${PUID:-1000}"
 APP_GID="${PGID:-1000}"
 
 if [ "$(id -u)" = "0" ]; then
-  # Only Gate's own state. The mounted config directory belongs to the operator
-  # and is never chowned from inside the container.
-  if [ -d /data ] && ! chown -R "$APP_UID:$APP_GID" /data 2>/dev/null; then
-    echo "gate: cannot change ownership of /data; continuing as uid $APP_UID" >&2
-  fi
+  # Directories Gate must be able to write: its state volume and the config
+  # directory it may have to seed. A read-only mount simply fails the chown and
+  # is reported later by the config bootstrap.
+  for dir in /data /app/config; do
+    [ -d "$dir" ] || continue
+    if ! chown -R "$APP_UID:$APP_GID" "$dir" 2>/dev/null; then
+      echo "gate: cannot change ownership of $dir; continuing as uid $APP_UID" >&2
+    fi
+  done
 
   exec su-exec "$APP_UID:$APP_GID" "$@"
 fi

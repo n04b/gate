@@ -35,13 +35,14 @@ Mounted directories keep their host ownership — and Docker creates a missing
 bind-mount source as `root:root` — so ownership, not the image, decides what the
 container may write. Gate handles that in two places:
 
-* `/data` is fixed by the entrypoint, which starts as root, chowns it to
+* The entrypoint starts as root, chowns `/data` and `/app/config` to
   `PUID:PGID` (`1000:1000` by default, taken from `UID`/`GID` in `.env`) and
   then execs Gate as that user. The server itself never runs as root; set
-  `user:` in compose to skip the step and stay unprivileged throughout.
-* `/app/config` is never chowned — it is your directory. If Gate cannot write
-  there it does not crash-loop: it writes the default to `/data/gate.yaml`
-  instead, says so in the log, and keeps using it.
+  `user:` in compose to skip the chown entirely and stay unprivileged
+  throughout.
+* If the config directory still cannot be written — a `:ro` mount, for
+  instance — Gate does not crash-loop: it writes the default to
+  `/data/gate.yaml`, says so in the log, and keeps using it.
 
 To move a fallback config back to the host, make the directory writable for that
 uid (`chown -R 1000:1000 config`) and copy the file over:
