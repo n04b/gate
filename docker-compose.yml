@@ -24,12 +24,14 @@ services:
       # edit. Add :ro once you manage the file yourself. If the directory is not
       # writable for uid 1000, Gate falls back to /data/gate.yaml in the volume
       # rather than failing to start.
-      - ./config:/app/config
+      - ./volumes/gate/config:/app/config
       # Holds the token log and, unless you point jwt.* elsewhere, the keys.
-      - gate-data:/data
-      # Prefer host-managed keys? Mount them and set jwt.public_key /
-      # jwt.private_key to /app/keys/… — bootstrap then leaves them alone.
-      # - ./keys:/app/keys:ro
+      - ./volumes/gate/data:/data
+
+    # Allow the container to reach the host machine by hostname when the app
+    # needs to call services running on the host OS, such as local dev APIs.
+    extra_hosts:
+      - "host.docker.internal:host-gateway"
 
     networks:
       - gateway
@@ -69,9 +71,6 @@ services:
   # node-red:
   #   image: nodered/node-red
   #   networks: [services]
-
-volumes:
-  gate-data:
 
 networks:
   gateway:
