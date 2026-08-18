@@ -10,6 +10,12 @@ server:
   max_body_size: 1MB
   upstream_timeout: 30s
 
+  # Who may set X-Forwarded-*. Default false: the client address comes from the
+  # socket and client-sent X-Forwarded-* are ignored. Behind cloudflared, set
+  # this to that container's address or subnet so the real client IP survives
+  # without letting every peer forge one.
+  # trust_proxy: "172.18.0.0/16"
+
 logging:
   level: info
 
@@ -25,6 +31,10 @@ jwt:
 
   audience:
     - homelab
+
+  # Reject tokens with no exp claim. Gate has no revocation list, so an
+  # expiry-less token cannot be invalidated without rotating the key pair.
+  require_expiry: true
 
 mapping:
   enabled: true

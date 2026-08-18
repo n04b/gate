@@ -25,7 +25,12 @@ export interface RevocationChecker {
   isRevoked(jti: string | undefined): Promise<boolean> | boolean;
 }
 
-export const allowAllRevocationChecker: RevocationChecker = {
+/**
+ * The default: nothing is revocable. Until a real checker exists, `exp` is the
+ * only thing that ever invalidates a token, which is why `requireExpiry`
+ * defaults to on.
+ */
+export const noRevocationChecker: RevocationChecker = {
   isRevoked: () => false,
 };
 
@@ -39,7 +44,7 @@ export function createJwtVerifier(
   options: { publicKey?: KeyObject; revocation?: RevocationChecker } = {},
 ): JwtVerifier {
   const publicKey = options.publicKey ?? loadPublicKey(config.publicKeyPath);
-  const revocation = options.revocation ?? allowAllRevocationChecker;
+  const revocation = options.revocation ?? noRevocationChecker;
 
   return {
     async verify(token: string): Promise<VerifyResult> {
@@ -60,6 +65,13 @@ export function createJwtVerifier(
         payload = verified.payload;
       } catch (error) {
         return { ok: false, reason: 'invalid', detail: (error as Error).message };
+      }
+
+      // An expiry-less token never becomes invalid on its own, and Gate has no
+      // revocation list to invalidate it with — the only remedy would be
+      // rotating the key pair, which kills every other token too.
+      if (config.requireExpiry && payload.exp === undefined) {
+        return { ok: false, reason: 'invalid', detail: 'token has no exp claim' };
       }
 
       if (await revocation.isRevoked(payload.jti)) {

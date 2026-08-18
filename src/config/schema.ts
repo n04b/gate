@@ -50,7 +50,12 @@ export const rawServerSchema = z
     port: z.number().int().min(1).max(65535).optional(),
     max_body_size: z.union([z.string(), z.number()]).optional(),
     upstream_timeout: z.union([z.string(), z.number()]).optional(),
-    trust_proxy: z.boolean().optional(),
+    // Fastify accepts a boolean, an IP/CIDR (or comma-separated list), or a
+    // hop count. Anything but a boolean lets an operator pin trust to the
+    // proxy actually in front of Gate instead of trusting every peer.
+    trust_proxy: z
+      .union([z.boolean(), z.string().min(1), z.number().int().min(0)])
+      .optional(),
   })
   .strict();
 
@@ -62,6 +67,7 @@ export const rawJwtSchema = z
     issuer: z.string().min(1).optional(),
     audience: z.union([z.string().min(1), z.array(z.string().min(1)).min(1)]).optional(),
     clock_tolerance: z.union([z.string(), z.number()]).optional(),
+    require_expiry: z.boolean().optional(),
   })
   .strict();
 

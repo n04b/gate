@@ -61,9 +61,19 @@ describe('token issuing', () => {
     const issued = await createTokenIssuer(config.jwt).issue({ subject: 'a', target: 'n8n' });
     expect(issued.expiresAt).toBeUndefined();
 
-    const result = await createJwtVerifier(config.jwt).verify(issued.token);
+    // Such a token is only accepted where the operator has opted in.
+    const permissive = { ...config.jwt, requireExpiry: false };
+    const result = await createJwtVerifier(permissive).verify(issued.token);
     expect(result.ok).toBe(true);
     if (result.ok) expect(result.token.payload.exp).toBeUndefined();
+  });
+
+  it('rejects a token with no exp by default', async () => {
+    const issued = await createTokenIssuer(config.jwt).issue({ subject: 'a', target: 'n8n' });
+
+    const result = await createJwtVerifier(config.jwt).verify(issued.token);
+    expect(result.ok).toBe(false);
+    if (!result.ok) expect(result.detail).toMatch(/exp/);
   });
 });
 
@@ -155,6 +165,7 @@ describe('token verification', () => {
       aud: 'homelab',
       sub: 'github',
       iat: Math.floor(Date.now() / 1000),
+      exp: Math.floor(Date.now() / 1000) + 60,
       jti: 'x',
     });
 

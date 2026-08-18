@@ -20,7 +20,8 @@ export interface TokenLogRecord {
  * truncated — the file is opened in append mode only (SPEC §41).
  */
 export function appendTokenLog(path: string, record: TokenLogRecord): void {
-  mkdirSync(dirname(path), { recursive: true });
+  // Matches the key directory in bootstrap.ts: the log names every issued jti.
+  mkdirSync(dirname(path), { recursive: true, mode: 0o700 });
 
   const ordered: Record<string, unknown> = {
     jti: record.jti,

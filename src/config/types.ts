@@ -53,8 +53,12 @@ export interface ServerConfig {
   readonly port: number;
   readonly maxBodySizeBytes: number;
   readonly upstreamTimeoutMs: number;
-  /** Trust `X-Forwarded-*` sent by the tunnel in front of Gate. */
-  readonly trustProxy: boolean;
+  /**
+   * Which peers may set `X-Forwarded-*`. `false` trusts none; a string is an
+   * IP/CIDR (or comma-separated list) and a number is a hop count, both passed
+   * to Fastify unchanged. `true` trusts every peer and is not the default.
+   */
+  readonly trustProxy: boolean | string | number;
 }
 
 export interface JwtConfig {
@@ -65,6 +69,11 @@ export interface JwtConfig {
   readonly audience: readonly string[];
   /** Allowed clock skew when checking `exp` / `nbf`, in seconds. */
   readonly clockToleranceSec: number;
+  /**
+   * Reject tokens with no `exp` claim. On by default: an expiry-less token
+   * cannot be revoked, since Gate has no revocation list (SPEC §60).
+   */
+  readonly requireExpiry: boolean;
 }
 
 export interface TokenLogConfig {

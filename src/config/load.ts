@@ -36,18 +36,19 @@ const ALLOWED_ALGORITHMS: readonly JwtAlgorithm[] = [
 ];
 
 /** A target is a logical identifier — never a URL (SPEC §18). */
-const TARGET_PATTERN = /^[A-Za-z0-9][A-Za-z0-9._-]*$/;
+export const TARGET_PATTERN = /^[A-Za-z0-9][A-Za-z0-9._-]*$/;
 
 export const DEFAULTS = {
   host: '0.0.0.0',
   port: 8080,
   maxBodySize: '1MB',
   upstreamTimeout: '30s',
-  trustProxy: true,
+  trustProxy: false,
   algorithm: 'RS256' as JwtAlgorithm,
   issuer: 'homelab-gateway',
   audience: ['homelab'],
   clockToleranceSec: 5,
+  requireExpiry: true,
   mappingEnabled: true,
   logLevel: 'info' as const,
   tokenLogPath: '/data/tokens.jsonl',
@@ -264,6 +265,7 @@ function buildConfig(raw: z.infer<typeof rawConfigSchema>, options: LoadOptions)
       issuer: raw.jwt.issuer ?? DEFAULTS.issuer,
       audience,
       clockToleranceSec,
+      requireExpiry: raw.jwt.require_expiry ?? DEFAULTS.requireExpiry,
     },
     mapping: { enabled: raw.mapping?.enabled ?? DEFAULTS.mappingEnabled },
     logging: { level: raw.logging?.level ?? DEFAULTS.logLevel },

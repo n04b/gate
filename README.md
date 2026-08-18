@@ -83,7 +83,12 @@ server:
   port: 8080
   max_body_size: 1MB      # 413 above this
   upstream_timeout: 30s   # 504 above this
-  trust_proxy: true       # honour X-Forwarded-* from cloudflared
+  # Who may set X-Forwarded-*. Default false: trust nobody, and derive the
+  # client address from the socket. Set it to the address or CIDR of the proxy
+  # actually in front of Gate (cloudflared) to honour the header from that hop
+  # only -- `true` trusts every peer, including anything on the services
+  # network, and lets a client choose its own apparent IP.
+  trust_proxy: false      # false | "172.18.0.0/16" | 1
 
 logging:
   level: info
@@ -95,6 +100,7 @@ jwt:
   issuer: homelab-gateway               # default
   audience: [homelab]                   # default
   clock_tolerance: 5s
+  require_expiry: true                  # default; reject tokens with no exp claim
 
 mapping:
   enabled: true
@@ -150,6 +156,12 @@ upstream. Method, path, query string, body and application headers are proxied
 unchanged; `X-Forwarded-For`, `X-Forwarded-Proto`, `X-Forwarded-Host` and
 `X-Request-Id` are added.
 
+Gate is the authentication boundary, so headers that an upstream may read as an
+already-authenticated identity are dropped from client requests and never
+forwarded: `X-Real-IP`, `Remote-User` / `Remote-Groups` / `Remote-Email`,
+`X-Forwarded-User` / `-Email` / `-Groups`, `X-WebAuth-User`, and the
+`X-Auth-Request-*` family. Gate never emits them itself.
+
 ## Token CLI
 
 ```bash
@@ -158,7 +170,9 @@ gate token create --subject <sub> --target <target> (--expires <duration> | --no
 ```
 
 A lifetime must always be stated explicitly: `--expires 15m|1h|24h` or
-`--no-expiry`. Providing neither, or both, is an error. The JWT goes to stdout;
+`--no-expiry`. Because Gate has no revocation list yet, a token with no `exp`
+can never be invalidated short of rotating the key pair — so `--no-expiry` is
+refused unless `jwt.require_expiry: false` is set in the config. Providing neither, or both, is an error. The JWT goes to stdout;
 its metadata — never the token — is appended as one JSON line to
 `/data/tokens.jsonl` in the `gate-data` volume:
 

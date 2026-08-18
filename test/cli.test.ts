@@ -157,8 +157,25 @@ describe('token create', () => {
     }
   });
 
-  it('issues a non-expiring token only with --no-expiry', async () => {
-    expect(await cli('--subject', 'automation', '--target', 'n8n', '--no-expiry')).toBe(0);
+  it('refuses --no-expiry while jwt.require_expiry is on', async () => {
+    expect(await cli('--subject', 'automation', '--target', 'n8n', '--no-expiry')).toBe(1);
+    expect(stderr.join('')).toMatch(/require_expiry/);
+    expect(stdout.join('')).toBe('');
+  });
+
+  it('issues a non-expiring token once require_expiry is turned off', async () => {
+    const permissivePath = join(workDir, 'gate-no-expiry.yaml');
+    writeFileSync(
+      permissivePath,
+      readFileSync(configPath, 'utf8').replace(
+        'jwt:',
+        'jwt:\n  require_expiry: false',
+      ),
+    );
+
+    expect(
+      await cli('--subject', 'automation', '--target', 'n8n', '--no-expiry', '--config', permissivePath),
+    ).toBe(0);
 
     const claims = decodeJwt(stdout.join('').trim());
     expect(claims.exp).toBeUndefined();
@@ -167,6 +184,11 @@ describe('token create', () => {
     expect(record['exp']).toBeUndefined();
     expect(record['issued_by']).toBeTypeOf('string');
     expect(record['note']).toBeUndefined();
+  });
+
+  it('rejects a target that is not a valid identifier', async () => {
+    expect(await cli('--subject', 'a', '--target', 'http://n8n:5678', '--expires', '15m')).toBe(1);
+    expect(stderr.join('')).toMatch(/not a valid identifier/);
   });
 
   it('appends without touching earlier records', async () => {

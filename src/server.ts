@@ -29,6 +29,9 @@ interface RequestContext {
   service: string | undefined;
   route: 'normal' | 'fallback' | 'none';
   upstreamPath: string | undefined;
+  /** `sub` / `jti` of the token that authorised the request, when there was one. */
+  subject: string | undefined;
+  jti: string | undefined;
   startedAt: bigint;
 }
 
@@ -43,6 +46,11 @@ export async function buildServer(options: BuildServerOptions): Promise<FastifyI
   const verifier = options.verifier ?? createJwtVerifier(config.jwt);
   const proxy = options.proxy ?? createProxy({ upstreamTimeoutMs: config.server.upstreamTimeoutMs });
   const routeTable: RouteTable = createRouteTable(config);
+
+  // `trust_proxy` is a boolean, an IP/CIDR list or a hop count. Any value other
+  // than "trust nobody" means the peer is allowed to speak for the client.
+  const trustsForwardedHeaders =
+    config.server.trustProxy !== false && config.server.trustProxy !== 0;
 
   const app = Fastify({
     logger: {
@@ -79,6 +87,8 @@ export async function buildServer(options: BuildServerOptions): Promise<FastifyI
       service: undefined,
       route: 'none',
       upstreamPath: undefined,
+      subject: undefined,
+      jti: undefined,
       startedAt: process.hrtime.bigint(),
     };
   });
@@ -92,6 +102,13 @@ export async function buildServer(options: BuildServerOptions): Promise<FastifyI
         target_source: context.targetSource ?? null,
         service: context.service ?? null,
         route: context.route,
+        // `client_ip` honours trust_proxy and may be client-supplied; `peer_ip`
+        // is the socket address and is always trustworthy. Both are logged so
+        // a request stays attributable even when the chain is forged.
+        client_ip: request.ip ?? null,
+        peer_ip: request.socket.remoteAddress ?? null,
+        sub: context.subject ?? null,
+        jti: context.jti ?? null,
         method: request.method,
         path: request.url,
         upstream_path: context.upstreamPath ?? null,
@@ -148,6 +165,8 @@ export async function buildServer(options: BuildServerOptions): Promise<FastifyI
     const resolution = await resolveTarget(request.headers, verifier);
     context.target = resolution.target;
     context.targetSource = resolution.source;
+    context.subject = resolution.token?.subject;
+    context.jti = resolution.token?.jti;
 
     let route: Route = routeTable.fallback;
     if (resolution.target !== undefined) {
@@ -177,11 +196,11 @@ export async function buildServer(options: BuildServerOptions): Promise<FastifyI
     context.upstreamPath = upstreamPath;
 
     const headers = buildUpstreamHeaders(request.headers, {
-      clientIp: request.ip,
+      peerIp: request.socket.remoteAddress,
       protocol: request.protocol,
       host: request.headers.host,
       requestId: String(request.id),
-      trustProxy: config.server.trustProxy,
+      trustProxy: trustsForwardedHeaders,
     });
 
     const body = hasRequestBody(request)

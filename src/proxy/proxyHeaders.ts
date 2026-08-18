@@ -21,11 +21,44 @@ const HOP_BY_HOP = new Set([
 /** Headers Gate consumes itself and never passes upstream. */
 const GATE_ONLY_REQUEST_HEADERS = new Set(['x-target', 'authorization', 'host', 'expect']);
 
+/**
+ * Headers that some upstreams are configured to read as an already
+ * authenticated identity — Grafana's `auth.proxy`, oauth2-proxy, and the
+ * `remote-*` family used by several self-hosted apps.
+ *
+ * Gate is the authentication boundary, so a client must never be able to
+ * assert one of these. They are dropped unconditionally: Gate does not issue
+ * them today, and a request carrying one can only be trying to impersonate.
+ */
+const SPOOFABLE_IDENTITY_HEADERS = new Set([
+  'x-real-ip',
+  'x-forwarded-user',
+  'x-forwarded-email',
+  'x-forwarded-groups',
+  'x-forwarded-preferred-username',
+  'x-webauth-user',
+  'x-webauth-name',
+  'x-webauth-email',
+  'x-authenticated-user',
+  'remote-user',
+  'remote-name',
+  'remote-email',
+  'remote-groups',
+]);
+
+/** The oauth2-proxy identity family: `x-auth-request-user`, `-email`, `-groups`… */
+const IDENTITY_HEADER_PREFIX = 'x-auth-request-';
+
 export interface ForwardHeaderContext {
-  readonly clientIp: string | undefined;
+  /**
+   * Address of the socket peer. This is the only address a client cannot
+   * forge, so it — never `request.ip` — is what Gate appends to the chain.
+   */
+  readonly peerIp: string | undefined;
   readonly protocol: string;
   readonly host: string | undefined;
   readonly requestId: string;
+  /** `false` when no proxy is trusted; any other value trusts the peer. */
   readonly trustProxy: boolean;
 }
 
@@ -40,13 +73,18 @@ export function buildUpstreamHeaders(
     const lower = name.toLowerCase();
     if (HOP_BY_HOP.has(lower)) continue;
     if (GATE_ONLY_REQUEST_HEADERS.has(lower)) continue;
+    if (SPOOFABLE_IDENTITY_HEADERS.has(lower)) continue;
+    if (lower.startsWith(IDENTITY_HEADER_PREFIX)) continue;
     if (lower.startsWith('x-forwarded-')) continue; // rebuilt below
     headers[lower] = value;
   }
 
+  // Each proxy appends the address it received the request from. Appending
+  // `request.ip` instead would duplicate a value trustProxy just derived from
+  // this very header, and would drop the real peer from the chain entirely.
   const forwardedFor = context.trustProxy
-    ? joinForwardedFor(incoming['x-forwarded-for'], context.clientIp)
-    : context.clientIp;
+    ? joinForwardedFor(incoming['x-forwarded-for'], context.peerIp)
+    : context.peerIp;
   if (forwardedFor !== undefined) headers['x-forwarded-for'] = forwardedFor;
 
   const forwardedProto = context.trustProxy
@@ -80,11 +118,11 @@ export function buildDownstreamHeaders(
 
 function joinForwardedFor(
   existing: string | string[] | undefined,
-  clientIp: string | undefined,
+  peerIp: string | undefined,
 ): string | undefined {
   const chain = (Array.isArray(existing) ? existing.join(', ') : existing)?.trim();
-  if (chain === undefined || chain === '') return clientIp;
-  return clientIp === undefined ? chain : `${chain}, ${clientIp}`;
+  if (chain === undefined || chain === '') return peerIp;
+  return peerIp === undefined ? chain : `${chain}, ${peerIp}`;
 }
 
 function firstValue(value: string | string[] | undefined): string | undefined {

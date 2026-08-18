@@ -16,6 +16,10 @@ server:
   max_body_size: 1MB
   upstream_timeout: 30s
 
+  # Who may set X-Forwarded-*. Default false: trust nobody. Behind a proxy,
+  # set this to its address or subnet so the real client IP survives.
+  # trust_proxy: "172.18.0.0/16"
+
 logging:
   level: info
 
@@ -31,6 +35,10 @@ jwt:
 
   audience:
     - homelab
+
+  # Reject tokens with no exp claim. Gate has no revocation list, so an
+  # expiry-less token cannot be invalidated without rotating the key pair.
+  require_expiry: true
 
 mapping:
   enabled: true

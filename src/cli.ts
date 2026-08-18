@@ -3,7 +3,7 @@ import { hostname, userInfo } from 'node:os';
 import { pathToFileURL } from 'node:url';
 import { parseArgs } from 'node:util';
 import { resolveConfigPath } from './bootstrap.js';
-import { ConfigError, loadConfigFile } from './config/load.js';
+import { ConfigError, loadConfigFile, TARGET_PATTERN } from './config/load.js';
 import { parseDuration, UnitParseError } from './config/units.js';
 import { createTokenIssuer } from './jwt/issuer.js';
 import { KeyLoadError } from './jwt/keys.js';
@@ -82,6 +82,11 @@ async function tokenCreate(argv: readonly string[]): Promise<number> {
   if (values.target === undefined || values.target === '') {
     return fail('--target is required');
   }
+  if (!TARGET_PATTERN.test(values.target)) {
+    return fail(
+      `--target "${values.target}" is not a valid identifier (a target is never a URL)`,
+    );
+  }
 
   const hasExpires = values.expires !== undefined;
   const hasNoExpiry = values['no-expiry'] === true;
@@ -120,6 +125,16 @@ async function tokenCreate(argv: readonly string[]): Promise<number> {
   } catch (error) {
     if (error instanceof ConfigError) return fail(error.message);
     throw error;
+  }
+
+  // Minting a token the verifier is configured to reject helps nobody, and the
+  // failure would only show up as a 401 at request time.
+  if (hasNoExpiry && config.jwt.requireExpiry) {
+    return fail(
+      'refusing to issue a token with no expiry: jwt.require_expiry is on, so Gate ' +
+        'would reject it. Use --expires, or set jwt.require_expiry: false to allow ' +
+        'tokens that can never expire and cannot be revoked.',
+    );
   }
 
   const target = values.target;

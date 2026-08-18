@@ -69,7 +69,7 @@ describe('path mapping', () => {
 
 describe('proxy headers', () => {
   const context = {
-    clientIp: '10.0.0.5',
+    peerIp: '10.0.0.5',
     protocol: 'http',
     host: 'gateway.example.com',
     requestId: 'req-1',
@@ -99,6 +99,37 @@ describe('proxy headers', () => {
     expect(headers['host']).toBeUndefined();
     expect(headers['content-type']).toBe('application/json');
     expect(headers['x-custom']).toBe('test');
+  });
+
+  it('drops client-supplied identity headers', () => {
+    const headers = buildUpstreamHeaders(
+      {
+        'x-real-ip': '9.9.9.9',
+        'x-webauth-user': 'admin',
+        'x-forwarded-user': 'admin',
+        'remote-user': 'admin',
+        'remote-groups': 'admins',
+        'x-auth-request-email': 'admin@corp',
+        'x-auth-request-groups': 'admins',
+        'x-custom': 'kept',
+      },
+      context,
+    );
+
+    expect(headers['x-real-ip']).toBeUndefined();
+    expect(headers['x-webauth-user']).toBeUndefined();
+    expect(headers['x-forwarded-user']).toBeUndefined();
+    expect(headers['remote-user']).toBeUndefined();
+    expect(headers['remote-groups']).toBeUndefined();
+    expect(headers['x-auth-request-email']).toBeUndefined();
+    expect(headers['x-auth-request-groups']).toBeUndefined();
+    // Only the identity family is dropped; ordinary headers still pass.
+    expect(headers['x-custom']).toBe('kept');
+  });
+
+  it('appends the socket peer once, without duplicating it', () => {
+    const headers = buildUpstreamHeaders({ 'x-forwarded-for': '203.0.113.9' }, context);
+    expect(headers['x-forwarded-for']).toBe('203.0.113.9, 10.0.0.5');
   });
 
   it('maintains the forwarding chain', () => {
