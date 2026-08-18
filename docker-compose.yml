@@ -6,7 +6,7 @@ services:
     restart: unless-stopped
 
     # Gate never publishes a port on the host. It is reachable only through the
-    # internal Docker networks — cloudflared connects to http://gate:8080.
+    # internal Docker networks — cloudflared connects to http://gate:6473.
 
     environment:
       GATE_CONFIG: /app/config/gate.yaml
@@ -54,7 +54,7 @@ services:
     image: traefik/whoami
     container_name: gate-fallback
     restart: unless-stopped
-    command: ["--port", "8080"]
+    command: ["--port", "6473"]
     networks:
       - services
 

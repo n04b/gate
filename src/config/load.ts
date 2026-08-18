@@ -40,7 +40,7 @@ export const TARGET_PATTERN = /^[A-Za-z0-9][A-Za-z0-9._-]*$/;
 
 export const DEFAULTS = {
   host: '0.0.0.0',
-  port: 8080,
+  port: 6473,
   maxBodySize: '1MB',
   upstreamTimeout: '30s',
   trustProxy: false,

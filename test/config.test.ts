@@ -37,7 +37,7 @@ services:
   grafana-main:
     url: http://grafana:3000
   fallback:
-    url: http://fallback:8080
+    url: http://fallback:6473
 `;
 
 describe('defaults', () => {
@@ -52,7 +52,7 @@ routes:
     expect(config.jwt.algorithm).toBe('RS256');
     expect(config.jwt.issuer).toBe('homelab-gateway');
     expect(config.jwt.audience).toEqual(['homelab']);
-    expect(config.server.port).toBe(8080);
+    expect(config.server.port).toBe(6473);
     expect(config.server.maxBodySizeBytes).toBe(1_048_576);
     expect(config.server.upstreamTimeoutMs).toBe(30_000);
     expect(config.mapping.enabled).toBe(true);
@@ -198,7 +198,7 @@ services:
   bad:
     url: not-a-url
   fallback:
-    url: http://fallback:8080
+    url: http://fallback:6473
 routes:
   - fallback:
       service: fallback
@@ -211,7 +211,7 @@ services:
   bad:
     url: ftp://example.com
   fallback:
-    url: http://fallback:8080
+    url: http://fallback:6473
 routes:
   - fallback:
       service: fallback

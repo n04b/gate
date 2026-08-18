@@ -19,7 +19,7 @@ jwt:
   private_key: ${keys.privateKeyPath}
 services:
   fallback:
-    url: http://fallback:8080
+    url: http://fallback:6473
 routes:
   - fallback:
       service: fallback

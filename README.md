@@ -54,7 +54,7 @@ docker cp gate:/data/gate.yaml ./config/gate.yaml
 A config at the mounted path always wins over the fallback once it exists.
 
 `docker-compose.yml` expects `TUNNEL_TOKEN` in `.env` (see `.env.example`), and
-points the tunnel's public hostname at `http://gate:8080`. Gate publishes no
+points the tunnel's public hostname at `http://gate:6473`. Gate publishes no
 host port — it is reachable only over the internal Docker networks.
 
 To manage the key pair on the host instead, create it before the first start and
@@ -80,7 +80,7 @@ optional except `jwt.public_key`, `jwt.private_key`, `services` and `routes`.
 ```yaml
 server:
   host: 0.0.0.0
-  port: 8080
+  port: 6473
   max_body_size: 1MB      # 413 above this
   upstream_timeout: 30s   # 504 above this
   # Who may set X-Forwarded-*. Default false: trust nobody, and derive the
@@ -115,7 +115,7 @@ services:
   grafana-main:
     url: http://grafana:3000
   fallback:
-    url: http://fallback:8080
+    url: http://fallback:6473
 
 routes:
   - target: grafana
@@ -183,7 +183,7 @@ its metadata — never the token — is appended as one JSON line to
 ## Operations
 
 * `GET /health` → `{"status":"ok"}`. No target, no JWT, never proxied. The
-  Docker `HEALTHCHECK` uses it (it assumes the default port `8080`).
+  Docker `HEALTHCHECK` uses it (it assumes the default port `6473`).
 * One structured log line per request: `request_id`, `target`, `service`,
   `method`, `path`, `status`, `duration_ms`. JWTs, `Authorization`, credentials
   and request bodies are never logged.

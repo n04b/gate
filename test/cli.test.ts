@@ -33,7 +33,7 @@ services:
   n8n:
     url: http://n8n:5678
   fallback:
-    url: http://fallback:8080
+    url: http://fallback:6473
 
 routes:
   - target: n8n

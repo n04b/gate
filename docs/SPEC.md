@@ -90,7 +90,7 @@ services:
     url: http://node-red:1880
 
   fallback:
-    url: http://fallback:8080
+    url: http://fallback:6473
 
 
 routes:
@@ -1580,7 +1580,7 @@ Do not use:
 
 ```yaml
 ports:
-  - "8080:8080"
+  - "6473:6473"
 ```
 
 Gate must be reachable only through Docker networks.
@@ -1625,7 +1625,7 @@ https://gateway.example.com
 Cloudflare Tunnel
         │
         ▼
-gate:8080
+gate:6473
 ```
 
 Inside Docker:
@@ -1634,7 +1634,7 @@ Inside Docker:
 cloudflared
      │
      ▼
-http://gate:8080
+http://gate:6473
 ```
 
 Gate does not require a public IP or a host-published port.
