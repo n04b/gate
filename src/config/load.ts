@@ -2,9 +2,16 @@ import { readFileSync, accessSync, constants as fsConstants } from 'node:fs';
 import { resolve as resolvePath, dirname, isAbsolute } from 'node:path';
 import YAML from 'yaml';
 import { z } from 'zod';
-import { rawConfigSchema, rawFallbackRouteSchema, rawNormalRouteSchema } from './schema.js';
+import {
+  rawAccessSchema,
+  rawConfigSchema,
+  rawFallbackRouteSchema,
+  rawNormalRouteSchema,
+} from './schema.js';
 import { parseDuration, parseSize, UnitParseError } from './units.js';
 import type {
+  AccessCredentialConfig,
+  AccessSecretSource,
   FallbackRoute,
   GateConfig,
   JwtAlgorithm,
@@ -54,6 +61,9 @@ export const DEFAULTS = {
   tokenLogPath: '/data/tokens.jsonl',
 } as const;
 
+/** Only used to keep validation going after an unparsable `services.*.timeout`. */
+const DEFAULT_SERVICE_TIMEOUT_MS = 30_000;
+
 export interface LoadOptions {
   /** Verify that the JWT key files exist and are readable. */
   readonly checkKeyFiles?: boolean;
@@ -101,12 +111,43 @@ function buildConfig(raw: z.infer<typeof rawConfigSchema>, options: LoadOptions)
   // ---------------------------------------------------------------- services
   const services = new Map<string, ServiceConfig>();
   for (const [name, service] of Object.entries(raw.services)) {
+    const label = `services.${name}`;
     const parsedUrl = parseServiceUrl(service.url);
     if (typeof parsedUrl === 'string') {
-      issues.push(`services.${name}: ${parsedUrl}`);
+      issues.push(`${label}: ${parsedUrl}`);
       continue;
     }
-    services.set(name, { name, origin: parsedUrl.origin, basePath: parsedUrl.basePath });
+
+    const access = buildAccessCredentials(service.access, label, baseDir, issues);
+
+    // A service token on a plaintext hop is a credential on the wire. Every
+    // origin behind Cloudflare Access is reachable over https, so requiring it
+    // costs nothing and closes the mistake off entirely.
+    if (access !== undefined && !parsedUrl.tls) {
+      issues.push(
+        `${label}: access requires an https:// url — a Cloudflare Access ` +
+          'service token must never be sent over plaintext http',
+      );
+    }
+
+    const timeoutMs =
+      service.timeout === undefined
+        ? undefined
+        : numeric(
+            () => parseDuration(service.timeout as string | number),
+            `${label}.timeout`,
+            issues,
+            DEFAULT_SERVICE_TIMEOUT_MS,
+          );
+
+    services.set(name, {
+      name,
+      origin: parsedUrl.origin,
+      basePath: parsedUrl.basePath,
+      tls: parsedUrl.tls,
+      ...(access === undefined ? {} : { access }),
+      ...(timeoutMs === undefined ? {} : { timeoutMs }),
+    });
   }
   if (Object.keys(raw.services).length === 0) {
     issues.push('services: at least one service must be defined');
@@ -328,7 +369,49 @@ function buildRouteMapping(
   return { path: { stripPrefix } };
 }
 
-function parseServiceUrl(value: string): { origin: string; basePath: string } | string {
+/**
+ * Validates a Cloudflare Access service token reference.
+ *
+ * Only the *reference* is resolved here. The secret itself is read at startup
+ * by `proxy/accessCredentials.ts` so that it never enters {@link GateConfig},
+ * which Gate summarises to the log when it starts.
+ */
+function buildAccessCredentials(
+  raw: z.infer<typeof rawAccessSchema> | undefined,
+  label: string,
+  baseDir: string,
+  issues: string[],
+): AccessCredentialConfig | undefined {
+  if (raw === undefined) return undefined;
+
+  const file = raw.client_secret_file;
+  const env = raw.client_secret_env;
+
+  if (file !== undefined && env !== undefined) {
+    issues.push(
+      `${label}: access must set exactly one of client_secret_file and client_secret_env, not both`,
+    );
+    return undefined;
+  }
+
+  const secret: AccessSecretSource | undefined =
+    file !== undefined
+      ? { kind: 'file', path: resolveConfigPath(file, baseDir) }
+      : env !== undefined
+        ? { kind: 'env', name: env }
+        : undefined;
+
+  if (secret === undefined) {
+    issues.push(`${label}: access requires client_secret_file or client_secret_env`);
+    return undefined;
+  }
+
+  return { clientId: raw.client_id, secret };
+}
+
+function parseServiceUrl(
+  value: string,
+): { origin: string; basePath: string; tls: boolean } | string {
   let url: URL;
   try {
     url = new URL(value);
@@ -342,7 +425,7 @@ function parseServiceUrl(value: string): { origin: string; basePath: string } | 
     return `service URL must not contain a query string or fragment: "${value}"`;
   }
   const basePath = url.pathname === '/' ? '' : url.pathname.replace(/\/$/, '');
-  return { origin: url.origin, basePath };
+  return { origin: url.origin, basePath, tls: url.protocol === 'https:' };
 }
 
 function blankToUndefined(value: string | undefined): string | undefined {

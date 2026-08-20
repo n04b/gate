@@ -7,9 +7,36 @@ import { z } from 'zod';
  * fields — fail validation instead of being silently ignored.
  */
 
+/**
+ * Cloudflare Access service token for an external origin.
+ *
+ * `client_secret` is intentionally absent: the secret must be named by file or
+ * environment variable, never written into the config file. An inline
+ * `client_secret` therefore fails `strict()` — `buildAccessCredentials` turns
+ * that into a directed error rather than a bare "unrecognized key".
+ */
+export const rawAccessSchema = z
+  .object({
+    client_id: z.string().min(1),
+    client_secret_file: z.string().min(1).optional(),
+    client_secret_env: z.string().min(1).optional(),
+    // Declared only so that inlining a secret gets a directed error instead of
+    // a bare "unrecognized key". Any value other than absent is rejected.
+    client_secret: z
+      .undefined({
+        invalid_type_error:
+          'client_secret must not be written into the config file; ' +
+          'use client_secret_file or client_secret_env',
+      })
+      .optional(),
+  })
+  .strict();
+
 export const rawServiceSchema = z
   .object({
     url: z.string().min(1),
+    access: rawAccessSchema.optional(),
+    timeout: z.union([z.string(), z.number()]).optional(),
   })
   .strict();
 

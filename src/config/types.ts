@@ -11,6 +11,30 @@ export type JwtAlgorithm =
   | 'ES384'
   | 'ES512';
 
+/**
+ * Where the `CF-Access-Client-Secret` value is read from at startup.
+ *
+ * The secret is deliberately not expressible inline: `config/gate.yaml` is a
+ * bind-mounted file an operator is told to edit, so it is the wrong place for a
+ * credential. It is resolved outside {@link GateConfig} (see
+ * `proxy/accessCredentials.ts`) and never becomes part of the config object
+ * that Gate logs at startup.
+ */
+export type AccessSecretSource =
+  | { readonly kind: 'file'; readonly path: string }
+  | { readonly kind: 'env'; readonly name: string };
+
+/**
+ * A Cloudflare Access service token Gate presents to an external origin
+ * (a Worker, or anything else behind Access) as `CF-Access-Client-Id` /
+ * `CF-Access-Client-Secret`.
+ */
+export interface AccessCredentialConfig {
+  /** `CF-Access-Client-Id`. A public identifier, not a secret. */
+  readonly clientId: string;
+  readonly secret: AccessSecretSource;
+}
+
 export interface ServiceConfig {
   /** Key under `services:` in the YAML file. */
   readonly name: string;
@@ -18,6 +42,16 @@ export interface ServiceConfig {
   readonly origin: string;
   /** Optional base path taken from the service URL, `''` when none. */
   readonly basePath: string;
+  /** True when the origin is reached over TLS. Required for {@link access}. */
+  readonly tls?: boolean;
+  /** Outbound Cloudflare Access credentials, when the origin requires them. */
+  readonly access?: AccessCredentialConfig;
+  /**
+   * Per-service egress timeout, overriding `server.upstream_timeout`. An
+   * origin on the public internet has a different failure profile from a
+   * container on the `services` network, so it gets its own budget.
+   */
+  readonly timeoutMs?: number;
 }
 
 export interface PathMappingConfig {

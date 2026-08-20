@@ -305,3 +305,145 @@ routes:
     expect(found.length).toBeGreaterThanOrEqual(3);
   });
 });
+
+describe('external services', () => {
+  const WORKER = `
+services:
+  worker:
+    url: https://router.example.workers.dev
+    access:
+      client_id: abc123.access
+      client_secret_env: CF_ACCESS_SECRET_WORKER
+    timeout: 10s
+  fallback:
+    url: http://fallback:6473
+`;
+
+  it('accepts an https origin with a Cloudflare Access service token', () => {
+    const config = load(`${WORKER}
+routes:
+  - target: worker
+  - fallback:
+      service: fallback
+`);
+
+    const worker = config.services.get('worker')!;
+    expect(worker.origin).toBe('https://router.example.workers.dev');
+    expect(worker.tls).toBe(true);
+    expect(worker.timeoutMs).toBe(10_000);
+    expect(worker.access).toEqual({
+      clientId: 'abc123.access',
+      secret: { kind: 'env', name: 'CF_ACCESS_SECRET_WORKER' },
+    });
+  });
+
+  it('leaves ordinary internal services untouched', () => {
+    const config = load(`${SERVICES}
+routes:
+  - fallback:
+      service: fallback
+`);
+
+    const n8n = config.services.get('n8n')!;
+    expect(n8n.tls).toBe(false);
+    expect(n8n.access).toBeUndefined();
+    expect(n8n.timeoutMs).toBeUndefined();
+  });
+
+  it('resolves client_secret_file relative to the config directory', () => {
+    const config = parseConfig(
+      yaml(`
+services:
+  worker:
+    url: https://router.example.workers.dev
+    access:
+      client_id: abc123.access
+      client_secret_file: secrets/cf-access.txt
+routes:
+  - target: worker
+`),
+      { baseDir: '/etc/gate' },
+    );
+
+    expect(config.services.get('worker')!.access?.secret).toEqual({
+      kind: 'file',
+      path: '/etc/gate/secrets/cf-access.txt',
+    });
+  });
+
+  it('refuses an inline client_secret and says what to use instead', () => {
+    expect(
+      issues(`
+services:
+  worker:
+    url: https://router.example.workers.dev
+    access:
+      client_id: abc123.access
+      client_secret: super-secret
+routes:
+  - target: worker
+`).join('\n'),
+    ).toMatch(/client_secret must not be written into the config file/);
+  });
+
+  it('requires exactly one secret source', () => {
+    expect(
+      issues(`
+services:
+  worker:
+    url: https://router.example.workers.dev
+    access:
+      client_id: abc123.access
+routes:
+  - target: worker
+`),
+    ).toContain('services.worker: access requires client_secret_file or client_secret_env');
+
+    expect(
+      issues(`
+services:
+  worker:
+    url: https://router.example.workers.dev
+    access:
+      client_id: abc123.access
+      client_secret_env: A
+      client_secret_file: /b
+routes:
+  - target: worker
+`),
+    ).toContain(
+      'services.worker: access must set exactly one of client_secret_file and client_secret_env, not both',
+    );
+  });
+
+  it('refuses to send a service token over plaintext http', () => {
+    expect(
+      issues(`
+services:
+  worker:
+    url: http://router.example.workers.dev
+    access:
+      client_id: abc123.access
+      client_secret_env: CF_ACCESS_SECRET_WORKER
+routes:
+  - target: worker
+`).join('\n'),
+    ).toMatch(/access requires an https:\/\/ url/);
+  });
+
+  it('rejects an invalid per-service timeout', () => {
+    expect(
+      issues(`
+services:
+  worker:
+    url: https://router.example.workers.dev
+    timeout: soon
+  fallback:
+    url: http://fallback:6473
+routes:
+  - fallback:
+      service: fallback
+`).join('\n'),
+    ).toMatch(/services\.worker\.timeout: invalid duration/);
+  });
+});
