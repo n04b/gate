@@ -56,9 +56,7 @@ function readSecret(source: AccessSecretSource, label: string, env: NodeJS.Proce
   const raw = source.kind === 'file' ? readSecretFile(source.path, label) : env[source.name];
 
   if (raw === undefined) {
-    throw new AccessCredentialError(
-      `${label}: environment variable ${(source as { name: string }).name} is not set`,
-    );
+    throw new AccessCredentialError(`${label}: ${describe(source)} is not set`);
   }
 
   // A secret written with `echo` carries a trailing newline, and a header value
