@@ -96,14 +96,17 @@ describe('validation', () => {
     expect(issues(SERVICES)).toContain('routes: Required');
   });
 
-  it('requires exactly one fallback', () => {
-    expect(
-      issues(`${SERVICES}
+  it('allows a config with no fallback route', () => {
+    const config = load(`${SERVICES}
 routes:
   - target: n8n
-`),
-    ).toContain('routes: exactly one fallback route is required, found none');
+`);
 
+    expect(config.fallback).toBeUndefined();
+    expect(config.routes).toHaveLength(1);
+  });
+
+  it('rejects more than one fallback', () => {
     expect(
       issues(`${SERVICES}
 routes:
@@ -112,7 +115,7 @@ routes:
   - fallback:
       service: n8n
 `),
-    ).toContain('routes: exactly one fallback route is required, found 2');
+    ).toContain('routes: at most one fallback route is allowed, found 2');
   });
 
   it('rejects auth on fallback', () => {
@@ -297,6 +300,7 @@ routes:
   - target: n8n
   - target: n8n
   - target: unknown-service-target
+  - target: http://not-an-identifier
 `);
     expect(found.length).toBeGreaterThanOrEqual(3);
   });

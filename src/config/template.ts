@@ -59,8 +59,10 @@ services:
   #   url: http://grafana:3000
 
 routes:
-  # Exactly one fallback is required. It never authenticates and its path is
-  # never rewritten.
+  # The fallback is optional (at most one). It catches every request that
+  # resolves no matching route; without it such requests get 400 no_target
+  # (no target at all) or 404 no_route (unknown target). It never
+  # authenticates and its path is never rewritten.
   - fallback:
       service: fallback
 

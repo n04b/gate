@@ -92,7 +92,7 @@ async function main(): Promise<void> {
         service: route.service.name,
         auth: route.auth,
       })),
-      fallback: config.fallback.service.name,
+      fallback: config.fallback?.service.name ?? null,
       mapping_enabled: config.mapping.enabled,
     },
     'gate started',

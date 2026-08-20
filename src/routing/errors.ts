@@ -3,6 +3,8 @@ export type GateErrorCode =
   | 'jwt_invalid'
   | 'jwt_target_missing'
   | 'unauthorized'
+  | 'no_target'
+  | 'no_route'
   | 'payload_too_large'
   | 'bad_gateway'
   | 'gateway_timeout'
@@ -32,6 +34,16 @@ export class GateError extends Error {
 
   static unauthorized(detail?: string): GateError {
     return new GateError('unauthorized', 401, detail);
+  }
+
+  /** No target could be resolved and no fallback is configured (SPEC §14). */
+  static noTarget(detail?: string): GateError {
+    return new GateError('no_target', 400, detail);
+  }
+
+  /** A target resolved but no route matched it and no fallback is configured. */
+  static noRoute(detail?: string): GateError {
+    return new GateError('no_route', 404, detail);
   }
 
   static payloadTooLarge(): GateError {

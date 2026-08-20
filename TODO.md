@@ -2,19 +2,15 @@
 
 ## Features and improvements
 
-- [ ] **Make the fallback route optional**
-      — `src/config/load.ts:184`, `src/config/types.ts:87`, `src/server.ts:152`
+- [x] **Make the fallback route optional**
 
-      Config load currently rejects anything but exactly one fallback, and
-      `GateConfig.fallback` is a non-optional `FallbackRoute` that
-      `gatewayHandler` uses as the starting value for every request. Making it
-      optional needs a decided answer for "target resolved, no route matched,
-      no fallback configured" — most likely `404` with a `no_route` code, as a
-      new `GateErrorCode`. Also touches SPEC §14/§15 and §22, which currently
-      state exactly one fallback is required.
-
-      Worth deciding at the same time whether a request with no target at all
-      and no fallback is the same error or a distinct one.
+      Done. Config load now allows zero fallbacks (still rejects two or more),
+      and `GateConfig.fallback` / `RouteTable.fallback` are `FallbackRoute |
+      undefined`. When no fallback is configured, `gatewayHandler` rejects an
+      unroutable request with two distinct new `GateErrorCode`s: `no_target`
+      (`400`) when no target could be resolved at all, and `no_route` (`404`)
+      when a target resolved but matched no route. SPEC §1/§7/§9/§14/§22/§58/§64
+      updated accordingly.
 
 - [ ] **Config changes must take effect without a full restart**
 
@@ -214,6 +210,44 @@
       - **Writes config, so it inherits the config-GUI constraints** — admin
         surface off the proxy port, atomic validated writes, and the hot-reload
         item so a new rule takes effect without a restart.
+
+- [ ] **Build an end-to-end testing pipeline**
+
+      The 118 vitest cases are in-process integration tests: they drive Fastify
+      through `app.inject` against throwaway HTTP upstreams (`test/helpers.ts`),
+      never a built image or a real listener. That leaves a gap nothing covers —
+      the Docker build, the entrypoint (`PUID`/`PGID` chown, bootstrap key and
+      config generation), the non-root runtime, `/health` over a real socket,
+      and proxying across the `services` network as wired in `docker-compose.yml`.
+
+      What an e2e pipeline should exercise, end to end against the actual image:
+
+      - **Bootstrap on first start.** Empty `config`/`data` volumes → container
+        writes `gate.yaml`, generates the key pair into the volume, comes up and
+        answers `/health`. Second start must not overwrite either.
+      - **Real proxying.** Stand up `gate` plus a stub upstream (traefik/whoami,
+        already the compose fallback) on the `services` network; mint a token
+        with the CLI over `docker exec` and confirm a JWT-routed request, an
+        `X-Target` request, the fallback path, and — now that it is optional —
+        the `no_target` / `no_route` responses when no fallback is configured.
+      - **Security invariants over the wire.** The header-hygiene and
+        `X-Forwarded-For` behaviour the raw-socket unit probes assert should be
+        re-checked against a real listener, since the in-process harness can mask
+        connection-level framing.
+
+      Design questions to settle:
+
+      - **Runner.** Either a `docker compose` fixture driven from vitest (spin
+        up, poll `/health`, run assertions with `fetch`, tear down) or a shell
+        script invoked from CI. Keep it separate from the fast unit run so
+        `npm test` stays quick; a dedicated `test:e2e` script and compose file.
+      - **CI.** There is no `.github/workflows` yet. The pipeline needs one that
+        builds the image, runs the unit suite, then the e2e suite, and fails the
+        build on any of them — the natural home for the "test suite is the
+        acceptance harness" point in the Go-rewrite item below.
+      - **Determinism.** Fixed image tag, pinned upstream stub, and generated
+        (not committed) keys per run, so nothing leaks between runs or bakes a
+        private key into the repo.
 
 - [ ] **Rewrite in Go** 🙂
 

@@ -182,10 +182,10 @@ function buildConfig(raw: z.infer<typeof rawConfigSchema>, options: LoadOptions)
     });
   });
 
-  if (fallbacks.length === 0) {
-    issues.push('routes: exactly one fallback route is required, found none');
-  } else if (fallbacks.length > 1) {
-    issues.push(`routes: exactly one fallback route is required, found ${fallbacks.length}`);
+  // The fallback route is optional (SPEC §7). At most one may be defined:
+  // without it, unresolved requests are rejected instead of proxied.
+  if (fallbacks.length > 1) {
+    issues.push(`routes: at most one fallback route is allowed, found ${fallbacks.length}`);
   }
 
   // --------------------------------------------------------------------- jwt
@@ -248,7 +248,7 @@ function buildConfig(raw: z.infer<typeof rawConfigSchema>, options: LoadOptions)
     throw new ConfigError(issues);
   }
 
-  const fallback = fallbacks[0] as FallbackRoute;
+  const fallback = fallbacks[0];
 
   return {
     server: {

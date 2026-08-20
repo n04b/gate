@@ -15,7 +15,7 @@ JWT has priority over `X-Target`.
 
 After resolving the target, Gate selects the corresponding route and proxies the original HTTP request to the configured local service.
 
-If no target can be resolved, or if the resolved target does not have a configured route, the request is sent to the `fallback` service.
+If no target can be resolved, or if the resolved target does not have a configured route, the request is sent to the `fallback` service when one is configured. The fallback is optional: without it, such a request is rejected — `400 Bad Request` (`no_target`) when no target could be resolved at all, or `404 Not Found` (`no_route`) when a target resolved but no route matched it.
 
 ---
 
@@ -230,7 +230,7 @@ Invalid configuration:
 
 Gate must reject this configuration.
 
-Exactly one fallback must exist in the configuration.
+The fallback is optional. At most one fallback may be defined; two or more is a configuration error. When no fallback is configured, a request that resolves no matching route is rejected instead of proxied (see §14).
 
 ---
 
@@ -312,8 +312,8 @@ Rules:
 3. If JWT is valid but does not contain `target`, return `400 Bad Request`.
 4. If a valid JWT contains `target`, use only the JWT target.
 5. `X-Target` must not be used as a fallback when a valid JWT does not contain `target`.
-6. If JWT is absent and `X-Target` is absent, use fallback.
-7. If a target is resolved but no matching route exists, use fallback.
+6. If JWT is absent and `X-Target` is absent, use fallback; if no fallback is configured, return `400 Bad Request` (`no_target`).
+7. If a target is resolved but no matching route exists, use fallback; if no fallback is configured, return `404 Not Found` (`no_route`).
 8. Once a normal route has been selected, fallback must never be used.
 
 ---
@@ -426,7 +426,7 @@ A present but invalid JWT is an explicit authentication error and must not be tr
 
 Fallback is used only before a normal route has been selected.
 
-Fallback is selected in the following cases.
+Fallback is optional. When it is configured, it is selected in the cases below. When it is **not** configured, each of those cases becomes an explicit error response instead.
 
 ### No JWT and no X-Target
 
@@ -439,7 +439,8 @@ X-Target absent
 Result:
 
 ```text
-fallback
+fallback            (when configured)
+400 no_target       (when no fallback is configured)
 ```
 
 ### Unknown target
@@ -455,8 +456,13 @@ when no `unknown` route exists.
 Result:
 
 ```text
-fallback
+fallback            (when configured)
+404 no_route        (when no fallback is configured)
 ```
+
+`no_target` and `no_route` are distinct so an operator can tell a request that
+supplied no routing information (`400`) from a probe for a target that does not
+exist (`404`).
 
 ### After route selection
 
@@ -703,6 +709,8 @@ Fallback always operates without authentication.
 `auth` is not supported for fallback.
 
 Fallback never requires a JWT.
+
+When no fallback is configured, requests that would have reached it are rejected with `400 no_target` or `404 no_route` (§14) rather than authenticated.
 
 ---
 
@@ -1648,7 +1656,7 @@ At startup, Gate must validate:
 * YAML syntax;
 * presence of `services`;
 * presence of `routes`;
-* exactly one fallback;
+* at most one fallback;
 * unique normal route `target` values;
 * presence of `service` on fallback;
 * existence of every referenced service;
@@ -1843,8 +1851,8 @@ The MVP is considered complete when:
 8. A valid JWT without `target` returns `400 Bad Request`.
 9. An invalid JWT returns `401 Unauthorized`.
 10. An invalid JWT never falls back.
-11. If both JWT and `X-Target` are absent, fallback is used.
-12. If a target is resolved but no matching route exists, fallback is used.
+11. If both JWT and `X-Target` are absent, fallback is used, or `400 no_target` when no fallback is configured.
+12. If a target is resolved but no matching route exists, fallback is used, or `404 no_route` when no fallback is configured.
 13. `X-Target` matching is case-insensitive.
 14. When multiple `X-Target` headers are present, the last value is used.
 15. Authentication is configurable independently for each normal route.
@@ -1855,7 +1863,7 @@ The MVP is considered complete when:
 20. Normal route `target` values are unique.
 21. `service` defaults to `target`.
 22. Fallback requires `service`.
-23. Exactly one fallback exists in the configuration.
+23. At most one fallback exists in the configuration; it is optional.
 24. Target cannot be an arbitrary URL.
 25. Upstream URLs can only come from configured `services`.
 26. JWT uses RS256 by default.

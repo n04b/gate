@@ -18,7 +18,8 @@ export interface MatchContext {
 export interface RouteTable {
   /** Returns the matching normal route, or `undefined` when there is none. */
   match(context: MatchContext): NormalRoute | undefined;
-  readonly fallback: FallbackRoute;
+  /** The fallback route, or `undefined` when none is configured. */
+  readonly fallback: FallbackRoute | undefined;
 }
 
 export function createRouteTable(config: GateConfig): RouteTable {

@@ -178,6 +178,65 @@ describe('target resolution', () => {
   });
 });
 
+describe('no fallback configured', () => {
+  let noFallbackApp: FastifyInstance;
+
+  beforeAll(async () => {
+    const config = parseConfig(`
+logging:
+  level: silent
+
+jwt:
+  public_key: ${keys.publicKeyPath}
+  private_key: ${keys.privateKeyPath}
+
+services:
+  grafana-main:
+    url: ${grafana.url}
+
+routes:
+  - target: grafana
+    service: grafana-main
+    auth: false
+`);
+    noFallbackApp = await buildServer({ config });
+    await noFallbackApp.ready();
+  });
+
+  afterAll(async () => {
+    await noFallbackApp.close();
+  });
+
+  it('still routes a matching target', async () => {
+    const response = await noFallbackApp.inject({
+      method: 'GET',
+      url: '/x',
+      headers: { 'x-target': 'grafana' },
+    });
+
+    expect(response.statusCode).toBe(200);
+    expect(response.json().upstream).toBe('grafana');
+  });
+
+  it('returns 400 no_target when neither JWT nor X-Target is present', async () => {
+    const response = await noFallbackApp.inject({ method: 'GET', url: '/unknown/path' });
+
+    expect(response.statusCode).toBe(400);
+    expect(response.json()).toEqual({ error: 'no_target' });
+  });
+
+  it('returns 404 no_route when the resolved target has no route', async () => {
+    const response = await noFallbackApp.inject({
+      method: 'GET',
+      url: '/x',
+      headers: { 'x-target': 'nope' },
+    });
+
+    expect(response.statusCode).toBe(404);
+    expect(response.json()).toEqual({ error: 'no_route' });
+  });
+});
+
 describe('JWT failures', () => {
   it('returns 401 for an invalid JWT and does not fall back', async () => {
     const before = fallback.requests.length;

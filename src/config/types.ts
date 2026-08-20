@@ -93,5 +93,12 @@ export interface GateConfig {
   readonly tokenLog: TokenLogConfig;
   readonly services: ReadonlyMap<string, ServiceConfig>;
   readonly routes: readonly NormalRoute[];
-  readonly fallback: FallbackRoute;
+  /**
+   * The fallback route, or `undefined` when none is configured. Without a
+   * fallback, a request that resolves no matching route is rejected rather
+   * than proxied (SPEC §14): `no_target` (400) when no target could be
+   * resolved at all, `no_route` (404) when a target resolved but no route
+   * matched it.
+   */
+  readonly fallback: FallbackRoute | undefined;
 }

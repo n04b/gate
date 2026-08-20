@@ -168,15 +168,26 @@ export async function buildServer(options: BuildServerOptions): Promise<FastifyI
     context.subject = resolution.token?.subject;
     context.jti = resolution.token?.jti;
 
-    let route: Route = routeTable.fallback;
-    if (resolution.target !== undefined) {
-      const matched = routeTable.match({
-        target: resolution.target,
-        method: request.method,
-        path,
-        token: resolution.token,
-      });
-      if (matched !== undefined) route = matched;
+    let route: Route | undefined =
+      resolution.target === undefined
+        ? undefined
+        : routeTable.match({
+            target: resolution.target,
+            method: request.method,
+            path,
+            token: resolution.token,
+          });
+
+    // No normal route matched. Use the fallback if one is configured; without
+    // it the request cannot be routed and is rejected rather than proxied
+    // (SPEC §14).
+    if (route === undefined) {
+      if (routeTable.fallback === undefined) {
+        throw resolution.target === undefined
+          ? GateError.noTarget('no target resolved and no fallback route is configured')
+          : GateError.noRoute(`no route for target "${resolution.target}" and no fallback route is configured`);
+      }
+      route = routeTable.fallback;
     }
     context.route = route.kind;
     context.service = route.service.name;

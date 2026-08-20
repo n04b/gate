@@ -50,7 +50,7 @@ describe('generated config', () => {
     expect(existsSync(configPath)).toBe(true);
 
     const config = parseConfig(readFileSync(configPath, 'utf8'), { checkKeyFiles: false });
-    expect(config.fallback.service.name).toBe('fallback');
+    expect(config.fallback?.service.name).toBe('fallback');
     expect(config.jwt.algorithm).toBe('RS256');
     expect(config.jwt.privateKeyPath).toBe('/data/keys/jwt_private.pem');
     expect(config.tokenLog.path).toBe('/data/tokens.jsonl');
