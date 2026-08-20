@@ -57,6 +57,19 @@ services:
   #
   # grafana-main:
   #   url: http://grafana:3000
+  #
+  # An origin outside this Docker network, such as a Cloudflare Worker.
+  # "timeout" overrides server.upstream_timeout for this service alone.
+  # "access" is a Cloudflare Access service token Gate presents outbound; the
+  # secret is never written here, only named — use client_secret_env (an
+  # environment variable) or client_secret_file (a path). https is required.
+  #
+  # router:
+  #   url: https://router.example.workers.dev
+  #   timeout: 10s
+  #   access:
+  #     client_id: abc123.access
+  #     client_secret_env: CF_ACCESS_SECRET_ROUTER
 
 routes:
   # The fallback is optional (at most one). It catches every request that

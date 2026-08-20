@@ -38,25 +38,41 @@
       A bad edit must never take the gateway down. Trigger via `SIGHUP` plus
       optional `fs.watch` on the config path.
 
-- [ ] **Routing to external servers (Workers / Lambda)**
+- [x] **Routing to external servers (Cloudflare Workers)**
 
-      Partly supported already: `parseServiceUrl` accepts any `http`/`https`
-      URL, and `host` is dropped so undici sets it from the origin — so a
-      `https://foo.workers.dev` service should work as-is. Needs a test to
-      confirm the TLS path end to end before relying on it.
+      Done for Cloudflare; see SPEC §65/§66.
 
-      What is genuinely missing for this to be useful:
+      - The TLS path is now covered end to end, against a real HTTPS upstream
+        with a per-run self-signed CA (`test/external.test.ts`), rather than
+        assumed to work.
+      - **Outbound authentication** is a Cloudflare Access service token per
+        service: `access.client_id` plus `client_secret_env` or
+        `client_secret_file`, presented as `CF-Access-Client-Id` /
+        `CF-Access-Client-Secret`. The secret is never expressible inline —
+        `gate.yaml` is bind-mounted and edited by hand — is read once at
+        startup (missing/empty ⇒ Gate refuses to start), and never enters
+        `GateConfig`, so it cannot reach the startup log. `access` on an
+        `http://` URL is rejected.
+      - **Header hygiene:** every inbound `cf-access-*` header is dropped, so a
+        client can neither pick the credential Gate presents nor forge the
+        `cf-access-jwt-assertion` identity an origin behind Access trusts —
+        same class as [#1](https://github.com/n04b/gate/issues/1).
+      - **Egress:** `services.<name>.timeout` overrides
+        `server.upstream_timeout` per service and covers connection setup
+        (one undici `Agent` per distinct timeout), since DNS/TCP/TLS to an
+        internet origin is where the extra latency lives.
 
-      - Outbound authentication to the external endpoint. Gate strips
-        `authorization` and adds nothing of its own, so there is no way to
-        present a credential to a Worker or a Lambda function URL.
-      - Per-request dynamic targets. Services are a fixed allowlist in config
-        by design (a client can never supply a URL — SPEC §18), which is the
-        right default; anything dynamic needs an explicit, bounded mechanism
-        rather than relaxing that rule.
-      - Egress considerations: an external origin means Gate makes outbound
-        internet calls, so timeouts and failure modes matter more than they do
-        for a service on the `services` network.
+      Deliberately not done: **per-request dynamic targets**. Services stay a
+      fixed allowlist (SPEC §18/§19) — a client still cannot supply a URL.
+      Anything dynamic needs its own bounded mechanism; see *Rule-based target
+      assignment on the fallback path*.
+
+      Not done: **AWS Lambda**. Function URLs need SigV4 request signing, which
+      is a different mechanism from a static header pair — the credential is
+      derived per request from the method, path, headers and a hash of the
+      body. That last part conflicts with Gate never buffering a body, so it
+      needs its own design (streaming SigV4, or `UNSIGNED-PAYLOAD`, which not
+      every Lambda URL auth mode accepts).
 
 - [ ] **Rule-based target assignment on the fallback path**
 

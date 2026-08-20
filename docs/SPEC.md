@@ -129,6 +129,10 @@ A route may reference only a service defined under `services`.
 
 Clients must never be able to provide an arbitrary upstream URL.
 
+A service URL may also name an origin outside the Docker network, such as a
+Cloudflare Worker. See §65 for TLS and per-service timeouts, and §66 for
+authenticating to an origin behind Cloudflare Access.
+
 ---
 
 # 6. Route
@@ -1270,7 +1274,9 @@ server:
   upstream_timeout: 30s
 ```
 
-Future versions may allow overriding this value per service or route.
+This value may be overridden per service with `services.<name>.timeout` (§65).
+
+Future versions may allow overriding it per route.
 
 ---
 
@@ -1460,7 +1466,11 @@ For the MVP:
 
 `X-Target` is used by Gate for routing and must not be forwarded upstream by default.
 
-`Authorization` must not be forwarded upstream by default.
+`Authorization` must not be forwarded upstream by default. To authenticate to
+an upstream, Gate presents a credential of its own (§66).
+
+Every `CF-Access-*` header must be removed from client requests and never
+forwarded upstream (§66).
 
 Other application headers should be proxied.
 
@@ -1908,5 +1918,137 @@ The MVP is considered complete when:
 65. The internal architecture allows future JWT revocation by `jti`.
 66. The internal architecture allows future WebSocket proxying.
 
+---
+
+# 65. External Services
+
+Sections 65 and 66 are post-MVP. They are numbered after the acceptance
+criteria so that every existing cross-reference keeps its number.
+
+A service URL may name an origin outside the Docker network:
+
+```yaml
+services:
+  router:
+    url: https://router.example.workers.dev
+    timeout: 10s
 ```
+
+Nothing about target resolution or route selection changes. In particular,
+§18 and §19 continue to hold in full: `services` remains a fixed allowlist,
+a target is still a logical identifier, and a client can never supply a URL.
+An external service is only a service whose configured URL happens to be
+reachable over the internet.
+
+### TLS
+
+An `https` service URL is connected to over TLS with ordinary certificate
+verification against the system trust store. Cloudflare origins present
+publicly trusted certificates, so no additional configuration is required.
+
+Verification is never disabled by configuration.
+
+### Per-service timeout
+
+`services.<name>.timeout` overrides `server.upstream_timeout` for one service:
+
+```yaml
+services:
+  router:
+    url: https://router.example.workers.dev
+    timeout: 10s
 ```
+
+The override applies to the whole exchange, including connection setup — for
+an internet origin the DNS, TCP and TLS phases are where the additional
+latency lives. A service without `timeout` uses `server.upstream_timeout`.
+
+Exceeding the timeout produces `504 Gateway Timeout`, exactly as for an
+internal service.
+
+### Egress
+
+An external origin means Gate makes outbound calls to the internet. Failure of
+such a call is an ordinary upstream failure: `502` on a connection error, `504`
+on a timeout. No retry is performed, and a failure never causes fallback
+(§15).
+
+---
+
+# 66. Outbound Authentication (Cloudflare Access)
+
+Gate does not forward the client's `Authorization` header upstream (§51). To
+reach an origin protected by Cloudflare Access, Gate presents a service token
+of its own:
+
+```yaml
+services:
+  router:
+    url: https://router.example.workers.dev
+    access:
+      client_id: abc123.access
+      client_secret_env: CF_ACCESS_SECRET_ROUTER
+```
+
+When a service configures `access`, Gate adds to every request proxied to it:
+
+```http
+CF-Access-Client-Id: <client_id>
+CF-Access-Client-Secret: <secret>
+```
+
+These are added after the request headers have been built, and replace any
+value already present.
+
+### The secret is never written in the configuration file
+
+`client_id` is a public identifier and is written inline. The secret is not:
+`config/gate.yaml` is a bind-mounted file an operator is instructed to edit, so
+it is the wrong place for a credential.
+
+Exactly one of the following must be given:
+
+```yaml
+client_secret_file: /run/secrets/cf_access_router   # relative paths resolve
+                                                    # against the config file
+client_secret_env: CF_ACCESS_SECRET_ROUTER
+```
+
+An inline `client_secret` is a configuration error.
+
+The secret is read once, at startup. Surrounding whitespace is stripped. A
+missing, unreadable or empty secret, or one containing characters that are not
+valid in a header value, stops startup — consistent with §58, and preferable to
+a gateway that starts and then fails every request to that service.
+
+The resolved secret is never logged and is not part of the configuration
+object Gate summarises when it starts.
+
+### `access` requires TLS
+
+`access` on an `http://` service URL is a configuration error: it would put the
+service token on the wire in plaintext.
+
+### Client requests may not assert Cloudflare Access headers
+
+Every `CF-Access-*` header is removed from client requests and is never
+forwarded upstream. Two separate things live under that prefix and a client may
+assert neither:
+
+* `CF-Access-Client-Id` / `CF-Access-Client-Secret` — the credential Gate
+  presents. A client supplying these would be choosing the identity Gate
+  authenticates with.
+* `CF-Access-Jwt-Assertion` / `CF-Access-Authenticated-User-Email` — the
+  identity Access asserts to an origin, which upstreams behind Access are
+  configured to trust.
+
+This is the same class of protection as the identity headers in §51.
+
+Other `CF-*` headers (`CF-Connecting-IP`, `CF-Ray`, `CF-IPCountry`) are ordinary
+metadata and are forwarded unchanged; the trustworthy client address is carried
+by `X-Forwarded-For`, which Gate rebuilds from the socket peer.
+
+### Not covered
+
+Per-request or client-supplied credentials are out of scope: a credential is a
+property of a configured service, never of a request.

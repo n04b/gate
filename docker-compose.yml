@@ -11,6 +11,9 @@ services:
     environment:
       GATE_CONFIG: /app/config/gate.yaml
       GATE_ISSUED_BY: ${GATE_ISSUED_BY:-}
+      # Cloudflare Access service token secrets for external services, named by
+      # `access.client_secret_env` in gate.yaml. Add one line per service.
+      # CF_ACCESS_SECRET_ROUTER: ${CF_ACCESS_SECRET_ROUTER:-}
       # Gate runs as this user. The entrypoint chowns /data to it first, so a
       # bind-mounted data directory created by Docker as root:root still works.
       PUID: ${UID:-1000}

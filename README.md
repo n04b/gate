@@ -117,6 +117,15 @@ services:
   fallback:
     url: http://fallback:6473
 
+  # An origin outside the Docker network -- a Cloudflare Worker, say. See
+  # "External services" below.
+  router:
+    url: https://router.example.workers.dev
+    timeout: 10s            # overrides server.upstream_timeout for this service
+    access:                 # Cloudflare Access service token, presented outbound
+      client_id: abc123.access
+      client_secret_env: CF_ACCESS_SECRET_ROUTER
+
 routes:
   - target: grafana
     service: grafana-main   # defaults to the target name
@@ -130,7 +139,7 @@ routes:
     auth: false
 
   - fallback:
-      service: fallback     # exactly one, never authenticated, never mapped
+      service: fallback     # optional, at most one; never authenticated or mapped
 ```
 
 Configuration is validated before the server starts; any problem is reported and
@@ -144,8 +153,8 @@ Gate exits without listening. Unknown fields are errors, not warnings.
 | valid JWT without `target` | `400 {"error":"jwt_target_missing"}` |
 | present but invalid JWT | `401 {"error":"jwt_invalid"}` |
 | no JWT, `X-Target` present | that target (case-insensitive, last value wins) |
-| no JWT, no `X-Target` | fallback |
-| target with no matching route | fallback |
+| no JWT, no `X-Target` | fallback, or `400 {"error":"no_target"}` with no fallback |
+| target with no matching route | fallback, or `404 {"error":"no_route"}` with no fallback |
 | matched route with `auth: true`, no JWT | `401 {"error":"unauthorized"}` |
 
 Once a normal route is selected the request is never re-routed to the fallback:
@@ -161,6 +170,51 @@ already-authenticated identity are dropped from client requests and never
 forwarded: `X-Real-IP`, `Remote-User` / `Remote-Groups` / `Remote-Email`,
 `X-Forwarded-User` / `-Email` / `-Groups`, `X-WebAuth-User`, and the
 `X-Auth-Request-*` family. Gate never emits them itself.
+
+## External services
+
+A service URL may point outside the Docker network -- a Cloudflare Worker, or
+anything else reachable over `https`. Routing does not change: `services` stays
+a fixed allowlist, and a client still cannot supply a URL.
+
+```yaml
+services:
+  router:
+    url: https://router.example.workers.dev
+    timeout: 10s
+    access:
+      client_id: abc123.access
+      client_secret_env: CF_ACCESS_SECRET_ROUTER
+```
+
+**Reaching an origin behind Cloudflare Access.** Gate does not forward the
+client's `Authorization` header, so it presents a service token of its own,
+adding `CF-Access-Client-Id` and `CF-Access-Client-Secret` to every request to
+that service. Create the token under *Zero Trust → Access → Service Auth*, then
+add it to the Access policy for the application, with the action *Service Auth*.
+
+The **secret is never written into `gate.yaml`** -- that file is bind-mounted
+and meant to be edited by hand. Name it instead with exactly one of:
+
+| | |
+| --- | --- |
+| `client_secret_env: CF_ACCESS_SECRET_ROUTER` | read from the environment (see `.env.example`) |
+| `client_secret_file: /run/secrets/cf_access_router` | read from a file; relative paths resolve against `gate.yaml` |
+
+An inline `client_secret`, or `access` on a plaintext `http://` URL, is a
+configuration error. The secret is read once at startup: if it is missing,
+unreadable or empty, Gate refuses to start rather than failing every request to
+that service with a 502 from Access.
+
+`CF-Access-*` headers are stripped from client requests and never forwarded --
+a client can neither choose the credential Gate presents nor forge the identity
+(`CF-Access-Jwt-Assertion`) that an origin behind Access trusts. Other `CF-*`
+headers pass through unchanged.
+
+**Timeouts.** `timeout` overrides `server.upstream_timeout` for one service and
+covers connection setup too, which for an internet origin is where the extra
+latency lives. A timeout is a `504`; a connection failure is a `502`. Neither
+ever falls back.
 
 ## Token CLI
 
