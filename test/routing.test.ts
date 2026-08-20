@@ -127,6 +127,30 @@ describe('proxy headers', () => {
     expect(headers['x-custom']).toBe('kept');
   });
 
+  it('drops the whole client-supplied cf-access family', () => {
+    const headers = buildUpstreamHeaders(
+      {
+        // Gate's own outbound credential — a client must never choose it.
+        'cf-access-client-id': 'attacker.access',
+        'cf-access-client-secret': 'attacker-secret',
+        // Identity that Access asserts to an origin.
+        'cf-access-jwt-assertion': 'forged',
+        'cf-access-authenticated-user-email': 'admin@corp',
+        // Ordinary Cloudflare metadata still passes through.
+        'cf-ray': '8a1b2c3d4e5f',
+        'cf-ipcountry': 'DE',
+      },
+      context,
+    );
+
+    expect(headers['cf-access-client-id']).toBeUndefined();
+    expect(headers['cf-access-client-secret']).toBeUndefined();
+    expect(headers['cf-access-jwt-assertion']).toBeUndefined();
+    expect(headers['cf-access-authenticated-user-email']).toBeUndefined();
+    expect(headers['cf-ray']).toBe('8a1b2c3d4e5f');
+    expect(headers['cf-ipcountry']).toBe('DE');
+  });
+
   it('appends the socket peer once, without duplicating it', () => {
     const headers = buildUpstreamHeaders({ 'x-forwarded-for': '203.0.113.9' }, context);
     expect(headers['x-forwarded-for']).toBe('203.0.113.9, 10.0.0.5');

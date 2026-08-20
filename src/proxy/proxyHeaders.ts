@@ -49,6 +49,24 @@ const SPOOFABLE_IDENTITY_HEADERS = new Set([
 /** The oauth2-proxy identity family: `x-auth-request-user`, `-email`, `-groups`… */
 const IDENTITY_HEADER_PREFIX = 'x-auth-request-';
 
+/**
+ * The Cloudflare Access family, dropped from client requests unconditionally.
+ *
+ * Two distinct things live under this prefix and a client may assert neither:
+ *
+ * - `cf-access-client-id` / `cf-access-client-secret` are the service token
+ *   Gate itself presents to an external origin (SPEC §66). Letting a client
+ *   supply them would mean choosing the credential Gate authenticates with.
+ * - `cf-access-jwt-assertion` and `cf-access-authenticated-user-email` are the
+ *   identity Access asserts to an origin, which upstreams are configured to
+ *   trust — the same impersonation class as the headers above.
+ *
+ * Other `cf-*` headers (`cf-connecting-ip`, `cf-ray`, `cf-ipcountry`) are
+ * ordinary metadata and still pass through; the trustworthy client address is
+ * carried by `x-forwarded-for`, which Gate rebuilds from the socket peer.
+ */
+const ACCESS_HEADER_PREFIX = 'cf-access-';
+
 export interface ForwardHeaderContext {
   /**
    * Address of the socket peer. This is the only address a client cannot
@@ -75,6 +93,7 @@ export function buildUpstreamHeaders(
     if (GATE_ONLY_REQUEST_HEADERS.has(lower)) continue;
     if (SPOOFABLE_IDENTITY_HEADERS.has(lower)) continue;
     if (lower.startsWith(IDENTITY_HEADER_PREFIX)) continue;
+    if (lower.startsWith(ACCESS_HEADER_PREFIX)) continue; // Gate's own, or Access's
     if (lower.startsWith('x-forwarded-')) continue; // rebuilt below
     headers[lower] = value;
   }

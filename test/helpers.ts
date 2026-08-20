@@ -1,6 +1,8 @@
 import { createServer, type IncomingMessage, type Server, type ServerResponse } from 'node:http';
+import { createServer as createTlsServer } from 'node:https';
+import { execFileSync } from 'node:child_process';
 import { generateKeyPairSync } from 'node:crypto';
-import { mkdtempSync, writeFileSync } from 'node:fs';
+import { mkdtempSync, readFileSync, writeFileSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import type { AddressInfo } from 'node:net';
@@ -44,12 +46,65 @@ export interface UpstreamServer {
   close(): Promise<void>;
 }
 
+export interface TlsUpstreamServer extends UpstreamServer {
+  /** PEM of the throwaway CA (the self-signed cert itself), to pin in a client. */
+  readonly ca: string;
+}
+
+/**
+ * Generates a throwaway self-signed certificate valid for `localhost` and
+ * `127.0.0.1`.
+ *
+ * Node cannot mint X.509 certificates, so this shells out to `openssl`. The
+ * key is generated per run and never leaves the temp directory — a fixture
+ * certificate committed to the repository would mean a private key in git.
+ */
+export function createTestCertificate(): { certPath: string; keyPath: string; ca: string } {
+  const dir = mkdtempSync(join(tmpdir(), 'gate-tls-'));
+  const certPath = join(dir, 'cert.pem');
+  const keyPath = join(dir, 'key.pem');
+
+  execFileSync(
+    'openssl',
+    [
+      'req', '-x509', '-newkey', 'rsa:2048', '-nodes',
+      '-keyout', keyPath,
+      '-out', certPath,
+      '-days', '1',
+      '-subj', '/CN=localhost',
+      '-addext', 'subjectAltName=DNS:localhost,IP:127.0.0.1',
+    ],
+    { stdio: 'ignore' },
+  );
+
+  return { certPath, keyPath, ca: readFileSync(certPath, 'utf8') };
+}
+
+/**
+ * Starts a real HTTPS upstream, so the outbound TLS path is exercised end to
+ * end rather than assumed to work (SPEC §65).
+ */
+export async function startTlsUpstream(name = 'tls-upstream'): Promise<TlsUpstreamServer> {
+  const { certPath, keyPath, ca } = createTestCertificate();
+  const upstream = await startUpstream(name, (listener) =>
+    createTlsServer(
+      { cert: readFileSync(certPath, 'utf8'), key: readFileSync(keyPath, 'utf8') },
+      listener,
+    ),
+  );
+
+  return { ...upstream, url: upstream.url.replace(/^http:/, 'https:'), ca };
+}
+
 /** Starts a real HTTP upstream so proxying is exercised end to end. */
-export async function startUpstream(name = 'upstream'): Promise<UpstreamServer> {
+export async function startUpstream(
+  name = 'upstream',
+  listen: (listener: (req: IncomingMessage, res: ServerResponse) => void) => Server = createServer,
+): Promise<UpstreamServer> {
   const requests: RecordedRequest[] = [];
   let handler: ((req: IncomingMessage, res: ServerResponse) => void) | undefined;
 
-  const server: Server = createServer((req, res) => {
+  const server: Server = listen((req, res) => {
     const chunks: Buffer[] = [];
     req.on('data', (chunk: Buffer) => chunks.push(chunk));
     req.on('end', () => {

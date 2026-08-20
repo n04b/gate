@@ -9,6 +9,7 @@ import Fastify, {
 import type { GateConfig, Route } from './config/types.js';
 import { createJwtVerifier, type JwtVerifier } from './jwt/verifier.js';
 import { createProxy, type Proxy } from './proxy/proxy.js';
+import { resolveAccessCredentials } from './proxy/accessCredentials.js';
 import { applyPathMapping } from './proxy/mapping.js';
 import { declaredLengthExceeds, limitBodyStream } from './proxy/bodyLimit.js';
 import { buildDownstreamHeaders, buildUpstreamHeaders } from './proxy/proxyHeaders.js';
@@ -44,7 +45,15 @@ declare module 'fastify' {
 export async function buildServer(options: BuildServerOptions): Promise<FastifyInstance> {
   const { config } = options;
   const verifier = options.verifier ?? createJwtVerifier(config.jwt);
-  const proxy = options.proxy ?? createProxy({ upstreamTimeoutMs: config.server.upstreamTimeoutMs });
+  // Reading the service tokens here means a missing or unreadable secret stops
+  // startup, rather than turning every request to that service into a 502 from
+  // Cloudflare Access.
+  const proxy =
+    options.proxy ??
+    createProxy({
+      upstreamTimeoutMs: config.server.upstreamTimeoutMs,
+      credentials: resolveAccessCredentials(config.services.values()),
+    });
   const routeTable: RouteTable = createRouteTable(config);
 
   // `trust_proxy` is a boolean, an IP/CIDR list or a hop count. Any value other
