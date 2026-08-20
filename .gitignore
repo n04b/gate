@@ -14,3 +14,5 @@ keys/
 # config/gate.example.yaml is the reference kept in the repository.
 config/gate.yaml
 config/gate.dev.yaml
+
+.ua/
