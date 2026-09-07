@@ -1,9 +1,11 @@
 import { afterAll, beforeAll, describe, expect, it } from 'vitest';
+import { join } from 'node:path';
 import type { FastifyInstance } from 'fastify';
 import { parseConfig } from '../src/config/load.js';
 import { createTokenIssuer } from '../src/jwt/issuer.js';
+import { appendRevocation } from '../src/jwt/revocation.js';
 import { buildServer } from '../src/server.js';
-import { createTestKeys, startUpstream, type TestKeys, type UpstreamServer } from './helpers.js';
+import { createTestKeys, startUpstream, tempDir, type TestKeys, type UpstreamServer } from './helpers.js';
 
 let keys: TestKeys;
 let n8n: UpstreamServer;
@@ -11,7 +13,9 @@ let grafana: UpstreamServer;
 let fallback: UpstreamServer;
 let app: FastifyInstance;
 
-function configText(overrides: { server?: string; mapping?: string } = {}): string {
+function configText(
+  overrides: { server?: string; mapping?: string; revocation?: string } = {},
+): string {
   return `
 server:
   max_body_size: ${'1KB'}
@@ -26,7 +30,7 @@ jwt:
 
 mapping:
   enabled: ${overrides.mapping ?? 'true'}
-
+${overrides.revocation ?? ''}
 services:
   n8n:
     url: ${n8n.url}
@@ -271,6 +275,40 @@ describe('JWT failures', () => {
 
     expect(response.statusCode).toBe(401);
     expect(response.json()).toEqual({ error: 'jwt_invalid' });
+  });
+
+  it('rejects a revoked token as jwt_invalid without a restart and never falls back', async () => {
+    const revPath = join(tempDir('gate-gw-revoke-'), 'revocations.jsonl');
+    const config = parseConfig(configText({ revocation: `revocation:\n  path: ${revPath}` }));
+    const issued = await createTokenIssuer(config.jwt).issue({
+      subject: 'core',
+      target: 'n8n',
+      expiresInMs: 60_000,
+    });
+
+    const revokedApp = await buildServer({ config });
+    await revokedApp.ready();
+    try {
+      const authorised = {
+        method: 'GET' as const,
+        url: '/n8n/x',
+        headers: { authorization: `Bearer ${issued.token}` },
+      };
+
+      // Accepted before revocation.
+      expect((await revokedApp.inject(authorised)).statusCode).toBe(200);
+
+      // Revoke the jti; the same running app must now reject it.
+      appendRevocation(revPath, { jti: issued.jti, revoked_at: 1, revoked_by: 'test' });
+      const fallbackBefore = fallback.requests.length;
+      const response = await revokedApp.inject(authorised);
+
+      expect(response.statusCode).toBe(401);
+      expect(response.json()).toEqual({ error: 'jwt_invalid' });
+      expect(fallback.requests.length).toBe(fallbackBefore);
+    } finally {
+      await revokedApp.close();
+    }
   });
 
   it('returns 400 for a valid JWT without a target and ignores X-Target', async () => {

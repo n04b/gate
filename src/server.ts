@@ -8,6 +8,7 @@ import Fastify, {
 } from 'fastify';
 import type { GateConfig, Route } from './config/types.js';
 import { createJwtVerifier, type JwtVerifier } from './jwt/verifier.js';
+import { createFileRevocationChecker } from './jwt/revocation.js';
 import { createProxy, type Proxy } from './proxy/proxy.js';
 import { applyPathMapping } from './proxy/mapping.js';
 import { declaredLengthExceeds, limitBodyStream } from './proxy/bodyLimit.js';
@@ -43,7 +44,11 @@ declare module 'fastify' {
 
 export async function buildServer(options: BuildServerOptions): Promise<FastifyInstance> {
   const { config } = options;
-  const verifier = options.verifier ?? createJwtVerifier(config.jwt);
+  const verifier =
+    options.verifier ??
+    createJwtVerifier(config.jwt, {
+      revocation: createFileRevocationChecker(config.revocation.path),
+    });
   const proxy = options.proxy ?? createProxy({ upstreamTimeoutMs: config.server.upstreamTimeoutMs });
   const routeTable: RouteTable = createRouteTable(config);
 

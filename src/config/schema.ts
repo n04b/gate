@@ -90,6 +90,12 @@ export const rawTokenLogSchema = z
   })
   .strict();
 
+export const rawRevocationSchema = z
+  .object({
+    path: z.string().min(1).optional(),
+  })
+  .strict();
+
 export const rawConfigSchema = z
   .object({
     server: rawServerSchema.optional(),
@@ -97,6 +103,7 @@ export const rawConfigSchema = z
     mapping: rawMappingSchema.optional(),
     logging: rawLoggingSchema.optional(),
     token_log: rawTokenLogSchema.optional(),
+    revocation: rawRevocationSchema.optional(),
     services: z.record(z.string().min(1), rawServiceSchema),
     routes: z.array(z.unknown()),
   })

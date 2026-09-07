@@ -1,4 +1,4 @@
-import { appendFileSync, mkdirSync } from 'node:fs';
+import { appendFileSync, mkdirSync, readFileSync } from 'node:fs';
 import { dirname } from 'node:path';
 
 /**
@@ -34,4 +34,28 @@ export function appendTokenLog(path: string, record: TokenLogRecord): void {
   if (record.note !== undefined && record.note !== '') ordered['note'] = record.note;
 
   appendFileSync(path, `${JSON.stringify(ordered)}\n`, { encoding: 'utf8', mode: 0o600 });
+}
+
+/**
+ * Whether the token log records a token with this `jti`. Used only to warn on a
+ * likely-mistyped `jti` at revoke time, so a missing or unreadable log is
+ * reported as "unknown" (`undefined`) rather than treated as an error.
+ */
+export function tokenLogHasJti(path: string, jti: string): boolean | undefined {
+  let text: string;
+  try {
+    text = readFileSync(path, 'utf8');
+  } catch {
+    return undefined;
+  }
+
+  for (const line of text.split('\n')) {
+    if (line.trim() === '') continue;
+    try {
+      if ((JSON.parse(line) as { jti?: unknown }).jti === jti) return true;
+    } catch {
+      // Ignore an unparsable line; this is a best-effort lookup only.
+    }
+  }
+  return false;
 }

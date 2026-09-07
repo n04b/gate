@@ -1685,7 +1685,6 @@ Do not implement:
 * API key authentication;
 * OAuth;
 * external Identity Providers;
-* JWT revocation;
 * rate limiting;
 * Web UI;
 * request history;
@@ -1720,24 +1719,35 @@ WebSocket support is not part of the MVP.
 
 ## JWT Revocation
 
-Add the ability to revoke JWTs by `jti`.
+**Implemented.** JWTs can be revoked by `jti`.
 
-For example:
+Revocation is by `jti`:
 
 ```text
 jti = a1b2c3
 ```
 
-can be added to a revocation list.
+is added to the revocation list with:
 
-After revocation, Gate must reject the JWT even if:
+```bash
+gate token revoke --jti a1b2c3 [--reason <text>] [--revoked-by <who>]
+```
+
+After revocation, Gate rejects the JWT (`401 jwt_invalid`) even if:
 
 * its signature is valid;
 * `exp` has not expired;
 * issuer is valid;
 * audience is valid.
 
-The append-only token log should eventually provide the history of issued tokens, but it is not itself a revocation list.
+The revocation list is a separate append-only JSON Lines file
+(`revocation.path`, default `/data/revocations.jsonl`), distinct from the token
+log: the append-only token log is the history of *issued* tokens and is not
+itself a revocation list. Each record is at least `jti`, `revoked_at` and
+`revoked_by`, with an optional `reason`. Gate re-reads the list when it changes,
+so a revocation takes effect without a restart. The check is wired into the
+verifier through the `RevocationChecker` interface, which keeps the request path
+unchanged and stays injectable for tests.
 
 ---
 
@@ -1905,7 +1915,7 @@ The MVP is considered complete when:
 62. Gate runs as a non-root user.
 63. Configuration is validated before startup.
 64. The internal architecture allows a future rule engine.
-65. The internal architecture allows future JWT revocation by `jti`.
+65. JWTs can be revoked by `jti`; a revoked token is rejected even while otherwise valid.
 66. The internal architecture allows future WebSocket proxying.
 
 ```

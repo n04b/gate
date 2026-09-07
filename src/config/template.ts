@@ -36,8 +36,9 @@ jwt:
   audience:
     - homelab
 
-  # Reject tokens with no exp claim. Gate has no revocation list, so an
-  # expiry-less token cannot be invalidated without rotating the key pair.
+  # Reject tokens with no exp claim. A revoked jti is always rejected (see
+  # revocation below), but a no-expiry token otherwise lives until it is
+  # explicitly revoked, so keeping this on bounds token lifetime by default.
   require_expiry: true
 
 mapping:
@@ -45,6 +46,12 @@ mapping:
 
 token_log:
   path: /data/tokens.jsonl
+
+# Tokens revoked with \`gate token revoke --jti <jti>\` are recorded here. Gate
+# rejects a revoked jti even while its signature and exp are still valid, and
+# picks up new revocations without a restart.
+revocation:
+  path: /data/revocations.jsonl
 
 # Upstreams Gate is allowed to reach. A route can only name a service listed
 # here — a client can never supply a URL of its own.

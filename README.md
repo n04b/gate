@@ -109,6 +109,9 @@ token_log:
   path: /data/tokens.jsonl
   issued_by: homelab                   # default for `--issued-by`
 
+revocation:
+  path: /data/revocations.jsonl        # append-only list of revoked jti
+
 services:
   n8n:
     url: http://n8n:5678
@@ -167,18 +170,46 @@ forwarded: `X-Real-IP`, `Remote-User` / `Remote-Groups` / `Remote-Email`,
 ```bash
 gate token create --subject <sub> --target <target> (--expires <duration> | --no-expiry)
                   [--issued-by <who>] [--note <text>] [--config <path>]
+gate token revoke --jti <jti> [--reason <text>] [--revoked-by <who>] [--config <path>]
 ```
 
 A lifetime must always be stated explicitly: `--expires 15m|1h|24h` or
-`--no-expiry`. Because Gate has no revocation list yet, a token with no `exp`
-can never be invalidated short of rotating the key pair — so `--no-expiry` is
-refused unless `jwt.require_expiry: false` is set in the config. Providing neither, or both, is an error. The JWT goes to stdout;
-its metadata — never the token — is appended as one JSON line to
+`--no-expiry`. A token can be revoked by `jti` (see below), but a no-expiry
+token otherwise lives until it is revoked, so `--no-expiry` is refused unless
+`jwt.require_expiry: false` is set in the config — keeping a bounded lifetime the
+default. Providing neither, or both, is an error. The JWT goes to stdout; its
+metadata — never the token — is appended as one JSON line to
 `/data/tokens.jsonl` in the `gate-data` volume:
 
 ```json
 {"jti":"a1b2c3","sub":"github","target":"n8n","iat":1786500000,"exp":1786503600,"issued_by":"misha@laptop","note":"github webhook automation"}
 ```
+
+### Revoking a token
+
+```bash
+gate token revoke --jti <jti> [--reason <text>] [--revoked-by <who>] [--config <path>]
+```
+
+Revocation is by `jti` — copy it from the token log. Gate then rejects that
+token (`401 {"error":"jwt_invalid"}`) even while its signature, `exp`, issuer
+and audience are all still valid. The revocation takes effect **without a
+restart**: Gate re-reads the list when it changes.
+
+```bash
+docker exec gate gate token revoke --jti a1b2c3 --reason "laptop stolen"
+```
+
+Each revocation is one JSON line appended to `/data/revocations.jsonl` (also in
+the `gate-data` volume, and append-only like the token log):
+
+```json
+{"jti":"a1b2c3","revoked_at":1786600000,"revoked_by":"misha@laptop","reason":"laptop stolen"}
+```
+
+Revocation is the only way to invalidate a single live token; rotating the key
+pair is still the only way to invalidate *every* token at once. Back up the
+`gate-data` volume — losing the list un-revokes those tokens.
 
 ## Operations
 
@@ -191,9 +222,10 @@ its metadata — never the token — is appended as one JSON line to
   runtime into the `gate-data` volume or bind-mounted from the host — back up
   the volume, or the issued tokens stop verifying.
 * Gate runs as `PUID:PGID` (non-root, `1000:1000` by default) and keeps no
-  database; the only persistent state it writes is the token log and, on first
-  start, the config and key pair. `docker exec gate gate …` runs the CLI as the
-  owner of `/data`, so the token log keeps a single owner.
+  database; the only persistent state it writes is the token log, the
+  revocation list and, on first start, the config and key pair. `docker exec
+  gate gate …` runs the CLI as the owner of `/data`, so those files keep a
+  single owner.
 
 ## Development
 

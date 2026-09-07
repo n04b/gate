@@ -52,6 +52,7 @@ export const DEFAULTS = {
   mappingEnabled: true,
   logLevel: 'info' as const,
   tokenLogPath: '/data/tokens.jsonl',
+  revocationPath: '/data/revocations.jsonl',
 } as const;
 
 export interface LoadOptions {
@@ -273,6 +274,9 @@ function buildConfig(raw: z.infer<typeof rawConfigSchema>, options: LoadOptions)
       path: resolveConfigPath(raw.token_log?.path ?? DEFAULTS.tokenLogPath, baseDir),
       // An empty GATE_ISSUED_BY is treated as unset, not as an empty issuer.
       defaultIssuedBy: raw.token_log?.issued_by ?? blankToUndefined(options.defaultIssuedBy),
+    },
+    revocation: {
+      path: resolveConfigPath(raw.revocation?.path ?? DEFAULTS.revocationPath, baseDir),
     },
     services,
     routes: normalRoutes,

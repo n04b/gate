@@ -70,8 +70,9 @@ export interface JwtConfig {
   /** Allowed clock skew when checking `exp` / `nbf`, in seconds. */
   readonly clockToleranceSec: number;
   /**
-   * Reject tokens with no `exp` claim. On by default: an expiry-less token
-   * cannot be revoked, since Gate has no revocation list (SPEC §60).
+   * Reject tokens with no `exp` claim. On by default: a revoked `jti` is always
+   * rejected (SPEC §60), but a no-expiry token otherwise lives until it is
+   * explicitly revoked, so requiring `exp` bounds token lifetime by default.
    */
   readonly requireExpiry: boolean;
 }
@@ -79,6 +80,11 @@ export interface JwtConfig {
 export interface TokenLogConfig {
   readonly path: string;
   readonly defaultIssuedBy: string | undefined;
+}
+
+export interface RevocationConfig {
+  /** Append-only list of revoked `jti`s (SPEC §60). */
+  readonly path: string;
 }
 
 export interface LoggingConfig {
@@ -91,6 +97,7 @@ export interface GateConfig {
   readonly mapping: { readonly enabled: boolean };
   readonly logging: LoggingConfig;
   readonly tokenLog: TokenLogConfig;
+  readonly revocation: RevocationConfig;
   readonly services: ReadonlyMap<string, ServiceConfig>;
   readonly routes: readonly NormalRoute[];
   /**

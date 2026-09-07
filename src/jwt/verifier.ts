@@ -18,17 +18,18 @@ export type VerifyResult =
   | { readonly ok: false; readonly reason: VerifyFailureReason; readonly detail: string };
 
 /**
- * Future JWT revocation (SPEC §60) plugs in here: an implementation backed by a
- * revocation list is passed to the verifier without touching call sites.
+ * JWT revocation (SPEC §60) plugs in here: the checker is passed to the
+ * verifier without touching call sites. Production wires the file-backed
+ * `createFileRevocationChecker`; tests inject their own.
  */
 export interface RevocationChecker {
   isRevoked(jti: string | undefined): Promise<boolean> | boolean;
 }
 
 /**
- * The default: nothing is revocable. Until a real checker exists, `exp` is the
- * only thing that ever invalidates a token, which is why `requireExpiry`
- * defaults to on.
+ * The no-op default, used when no checker is injected (as in unit tests). With
+ * it, `exp` is the only thing that invalidates a token — which is why the
+ * server always wires a real checker and `requireExpiry` defaults to on.
  */
 export const noRevocationChecker: RevocationChecker = {
   isRevoked: () => false,
@@ -67,9 +68,10 @@ export function createJwtVerifier(
         return { ok: false, reason: 'invalid', detail: (error as Error).message };
       }
 
-      // An expiry-less token never becomes invalid on its own, and Gate has no
-      // revocation list to invalidate it with — the only remedy would be
-      // rotating the key pair, which kills every other token too.
+      // An expiry-less token never becomes invalid on its own; short of
+      // revoking its jti, the only other remedy would be rotating the key pair,
+      // which kills every other token too. requireExpiry keeps them out by
+      // default.
       if (config.requireExpiry && payload.exp === undefined) {
         return { ok: false, reason: 'invalid', detail: 'token has no exp claim' };
       }

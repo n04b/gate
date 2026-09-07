@@ -9,6 +9,7 @@ let keys: TestKeys;
 let workDir: string;
 let configPath: string;
 let tokenLogPath: string;
+let revocationPath: string;
 
 let stdout: string[];
 let stderr: string[];
@@ -18,6 +19,7 @@ beforeAll(() => {
   workDir = tempDir('gate-cli-');
   configPath = join(workDir, 'gate.yaml');
   tokenLogPath = join(workDir, 'tokens.jsonl');
+  revocationPath = join(workDir, 'revocations.jsonl');
 
   writeFileSync(
     configPath,
@@ -28,6 +30,9 @@ jwt:
 
 token_log:
   path: ${tokenLogPath}
+
+revocation:
+  path: ${revocationPath}
 
 services:
   n8n:
@@ -64,12 +69,24 @@ function cli(...args: string[]): Promise<number> {
   return run(['token', 'create', '--config', configPath, ...args]);
 }
 
-function logLines(): Array<Record<string, unknown>> {
-  if (!existsSync(tokenLogPath)) return [];
-  return readFileSync(tokenLogPath, 'utf8')
+function revoke(...args: string[]): Promise<number> {
+  return run(['token', 'revoke', '--config', configPath, ...args]);
+}
+
+function jsonLines(path: string): Array<Record<string, unknown>> {
+  if (!existsSync(path)) return [];
+  return readFileSync(path, 'utf8')
     .split('\n')
     .filter((line) => line !== '')
     .map((line) => JSON.parse(line) as Record<string, unknown>);
+}
+
+function logLines(): Array<Record<string, unknown>> {
+  return jsonLines(tokenLogPath);
+}
+
+function revocationLines(): Array<Record<string, unknown>> {
+  return jsonLines(revocationPath);
 }
 
 describe('argument validation', () => {
@@ -97,7 +114,7 @@ describe('argument validation', () => {
   });
 
   it('rejects unknown commands', async () => {
-    expect(await run(['token', 'revoke'])).toBe(1);
+    expect(await run(['token', 'frobnicate'])).toBe(1);
     expect(await run(['nonsense'])).toBe(1);
   });
 
@@ -231,5 +248,66 @@ describe('token create', () => {
   it('warns when the target has no configured route', async () => {
     expect(await cli('--subject', 'a', '--target', 'not-configured', '--expires', '5m')).toBe(0);
     expect(stderr.join('')).toContain('no route is configured for target "not-configured"');
+  });
+});
+
+describe('token revoke', () => {
+  it('requires a --jti', async () => {
+    expect(await revoke()).toBe(1);
+    expect(stderr.join('')).toContain('--jti is required');
+    expect(revocationLines()).toHaveLength(0);
+  });
+
+  it('records a revoked jti with its metadata', async () => {
+    // Issue a real token first so the jti is present in the token log.
+    expect(await cli('--subject', 'core', '--target', 'n8n', '--expires', '1h')).toBe(0);
+    const jti = logLines().at(-1)!['jti'] as string;
+    stderr.length = 0;
+
+    expect(
+      await revoke('--jti', jti, '--reason', 'laptop stolen', '--revoked-by', 'misha@laptop'),
+    ).toBe(0);
+
+    const record = revocationLines().at(-1)!;
+    expect(record).toMatchObject({ jti, revoked_by: 'misha@laptop', reason: 'laptop stolen' });
+    expect(record['revoked_at']).toBeTypeOf('number');
+    // No warning: the jti is in the token log.
+    expect(stderr.join('')).not.toContain('warning');
+  });
+
+  it('warns but still revokes a jti absent from the token log', async () => {
+    expect(await revoke('--jti', 'never-issued')).toBe(0);
+    expect(stderr.join('')).toContain('no token with jti "never-issued"');
+    expect(revocationLines().at(-1)).toMatchObject({ jti: 'never-issued' });
+  });
+
+  it('falls back to user@host when revoked-by is blank or unset', async () => {
+    const previous = process.env['GATE_ISSUED_BY'];
+    try {
+      delete process.env['GATE_ISSUED_BY'];
+      expect(await revoke('--jti', 'x1', '--revoked-by', '   ')).toBe(0);
+      expect(revocationLines().at(-1)!['revoked_by']).toMatch(/^.+@.+$/);
+    } finally {
+      if (previous === undefined) delete process.env['GATE_ISSUED_BY'];
+      else process.env['GATE_ISSUED_BY'] = previous;
+    }
+  });
+
+  it('appends without touching earlier records and never rewrites', async () => {
+    expect(await revoke('--jti', 'first')).toBe(0);
+    const rawBefore = readFileSync(revocationPath, 'utf8');
+
+    expect(await revoke('--jti', 'second')).toBe(0);
+    expect(readFileSync(revocationPath, 'utf8').startsWith(rawBefore)).toBe(true);
+    expect(revocationLines().at(-1)).toMatchObject({ jti: 'second' });
+  });
+
+  it('omits an empty reason', async () => {
+    expect(await revoke('--jti', 'no-reason', '--reason', '   ')).toBe(0);
+    expect(Object.keys(revocationLines().at(-1)!)).not.toContain('reason');
+  });
+
+  it('rejects unknown flags', async () => {
+    expect(await revoke('--jti', 'x', '--evil')).toBe(1);
   });
 });

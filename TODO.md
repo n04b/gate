@@ -126,14 +126,14 @@
       - Show the minted token exactly once, matching the CLI's stdout
         behaviour, and keep it out of logs and browser history.
 
-- [ ] **Implement the jti revocation denylist** (remainder of [#4](https://github.com/n04b/gate/issues/4))
+- [x] **Implement the jti revocation denylist** (remainder of [#4](https://github.com/n04b/gate/issues/4))
 
-      `require_expiry` now stops expiry-less tokens by default, so every token
-      dies on its own — but a leaked token still cannot be killed early. The
-      `RevocationChecker` interface and `noRevocationChecker` default are the
-      seam to fill; `appendTokenLog` already records every `jti`. Needs storage,
-      a `gate token revoke` command, and a reload path so a revocation takes
-      effect without a restart (see the config reload item above).
+      Done. `gate token revoke --jti <jti>` appends to an append-only revocation
+      list (`revocation.path`, default `/data/revocations.jsonl`);
+      `createFileRevocationChecker` fills the `RevocationChecker` seam and is
+      wired into the verifier in `buildServer`. A revoked token is rejected as
+      `jwt_invalid` even while otherwise valid, and the checker re-reads the list
+      when its size/mtime changes, so revocation takes effect without a restart.
 
 - [ ] **Dashboard for requests that hit the fallback route**
 
