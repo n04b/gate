@@ -928,7 +928,7 @@ Example:
 
 ```bash
 docker exec gate \
-  gate token create \
+  token create \
   --subject github \
   --target n8n \
   --expires 1h

@@ -27,15 +27,22 @@ COPY --from=build /app/dist ./dist
 COPY package.json ./
 COPY scripts/docker-entrypoint.sh /usr/local/bin/docker-entrypoint.sh
 
-# `docker exec gate gate token create ...` — run as whoever owns /data so the
-# append-only token log never ends up with mixed ownership.
+# CLI wrappers run as whoever owns /data so the append-only token log never
+# ends up with mixed ownership. `token` is a convenience wrapper for the
+# container form `docker exec gate token create ...`.
 RUN printf '%s\n' \
       '#!/bin/sh' \
       'if [ "$(id -u)" = "0" ] && [ -d /data ]; then' \
       '  exec su-exec "$(stat -c %u:%g /data)" node /app/dist/cli.js "$@"' \
       'fi' \
       'exec node /app/dist/cli.js "$@"' > /usr/local/bin/gate \
-    && chmod +x /usr/local/bin/gate /usr/local/bin/docker-entrypoint.sh \
+    && printf '%s\n' \
+      '#!/bin/sh' \
+      'if [ "$(id -u)" = "0" ] && [ -d /data ]; then' \
+      '  exec su-exec "$(stat -c %u:%g /data)" node /app/dist/cli.js token "$@"' \
+      'fi' \
+      'exec node /app/dist/cli.js token "$@"' > /usr/local/bin/token \
+    && chmod +x /usr/local/bin/gate /usr/local/bin/token /usr/local/bin/docker-entrypoint.sh \
     && mkdir -p /data /app/config \
     && chown -R node:node /data /app/config
 

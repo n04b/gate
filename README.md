@@ -69,7 +69,7 @@ sh scripts/generate-keys.sh ./keys   # then uncomment the ./keys mount in
 Issue a token:
 
 ```bash
-docker exec gate gate token create --subject github --target n8n --expires 1h
+docker exec gate token create --subject github --target n8n --expires 1h
 ```
 
 ## Configuration
@@ -197,7 +197,7 @@ and audience are all still valid. The revocation takes effect **without a
 restart**: Gate re-reads the list when it changes.
 
 ```bash
-docker exec gate gate token revoke --jti a1b2c3 --reason "laptop stolen"
+docker exec gate token revoke --jti a1b2c3 --reason "laptop stolen"
 ```
 
 Each revocation is one JSON line appended to `/data/revocations.jsonl` (also in
@@ -224,7 +224,7 @@ pair is still the only way to invalidate *every* token at once. Back up the
 * Gate runs as `PUID:PGID` (non-root, `1000:1000` by default) and keeps no
   database; the only persistent state it writes is the token log, the
   revocation list and, on first start, the config and key pair. `docker exec
-  gate gate …` runs the CLI as the owner of `/data`, so those files keep a
+  gate token …` runs the CLI as the owner of `/data`, so those files keep a
   single owner.
 
 ## Development
