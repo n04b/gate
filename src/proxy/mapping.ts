@@ -39,3 +39,18 @@ export function stripPathPrefix(path: string, prefix: string): string {
   }
   return path;
 }
+
+/**
+ * Joins a service URL path with the (mapped) request path (SPEC §5).
+ *
+ * A bare `/` adds nothing to a non-empty base path, so a service URL that
+ * points at an endpoint is reached exactly, without a trailing slash:
+ *   ''             + /     → /
+ *   ''             + /x    → /x
+ *   /api/imports   + /     → /api/imports
+ *   /api/imports   + /x    → /api/imports/x
+ */
+export function joinUpstreamPath(basePath: string, path: string): string {
+  if (basePath !== '' && path === '/') return basePath;
+  return `${basePath}${path}`;
+}

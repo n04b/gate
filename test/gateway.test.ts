@@ -40,6 +40,8 @@ services:
     url: ${fallback.url}
   dead:
     url: http://127.0.0.1:1
+  imports:
+    url: ${n8n.url}/api/imports
 
 routes:
   - target: grafana
@@ -57,6 +59,9 @@ routes:
 
   - target: broken
     service: dead
+    auth: false
+
+  - target: imports
     auth: false
 
   - fallback:
@@ -557,6 +562,20 @@ describe('path mapping', () => {
     });
 
     expect(n8n.requests.at(-1)?.url).toBe('/webhook?a=1');
+  });
+
+  it('appends the request path to the service URL path without a trailing slash for /', async () => {
+    const cases: Array<[string, string]> = [
+      ['/', '/api/imports'],
+      ['/?a=1', '/api/imports?a=1'],
+      ['/x', '/api/imports/x'],
+      ['/x/', '/api/imports/x/'],
+    ];
+
+    for (const [requested, expected] of cases) {
+      await app.inject({ method: 'POST', url: requested, headers: { 'x-target': 'imports' } });
+      expect(n8n.requests.at(-1)?.url).toBe(expected);
+    }
   });
 
   it('never maps the fallback path', async () => {

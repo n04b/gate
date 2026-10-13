@@ -16,3 +16,4 @@ config/gate.yaml
 config/gate.dev.yaml
 
 .ua/
+.vscode/

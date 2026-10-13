@@ -127,6 +127,18 @@ services:
 
 A route may reference only a service defined under `services`.
 
+A service URL may include a path. The request path (after mapping) is appended
+to it. A request path of exactly `/` adds nothing, so a URL that points at an
+endpoint is reached without a trailing slash:
+
+```text
+url: http://cookbook:3018/api/imports
+
+/        → /api/imports
+/?a=1    → /api/imports?a=1
+/x       → /api/imports/x
+```
+
 Clients must never be able to provide an arbitrary upstream URL.
 
 ---

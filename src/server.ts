@@ -10,7 +10,7 @@ import type { GateConfig, Route } from './config/types.js';
 import { createJwtVerifier, type JwtVerifier } from './jwt/verifier.js';
 import { createFileRevocationChecker } from './jwt/revocation.js';
 import { createProxy, type Proxy } from './proxy/proxy.js';
-import { applyPathMapping } from './proxy/mapping.js';
+import { applyPathMapping, joinUpstreamPath } from './proxy/mapping.js';
 import { declaredLengthExceeds, limitBodyStream } from './proxy/bodyLimit.js';
 import { buildDownstreamHeaders, buildUpstreamHeaders } from './proxy/proxyHeaders.js';
 import { GateError } from './routing/errors.js';
@@ -208,7 +208,7 @@ export async function buildServer(options: BuildServerOptions): Promise<FastifyI
     }
 
     const mappedPath = applyPathMapping(path, route, config.mapping.enabled);
-    const upstreamPath = `${route.service.basePath}${mappedPath}${query === undefined ? '' : `?${query}`}`;
+    const upstreamPath = `${joinUpstreamPath(route.service.basePath, mappedPath)}${query === undefined ? '' : `?${query}`}`;
     context.upstreamPath = upstreamPath;
 
     const headers = buildUpstreamHeaders(request.headers, {
